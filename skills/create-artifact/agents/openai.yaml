@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Artifact"
+  short_description: "Create and privately publish visual HTML pages"
+  default_prompt: "Use $create-artifact to turn this work into a private, shareable visual page."
