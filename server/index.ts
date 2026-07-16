@@ -15,10 +15,11 @@ import {
   MAX_ARTIFACT_BYTES,
   MAX_CHUNK_BYTES,
   MAX_SHARED_EMAILS,
-  OWNER_EMAIL,
+  PRIMARY_OWNER_EMAIL,
   chunkHtml,
   cleanSlug,
   cleanTitle,
+  isOwnerEmail,
   normalizeEmail,
   normalizeSharedEmails,
   parseSharedEmails,
@@ -67,7 +68,8 @@ function authenticatedEmail(ctx: { auth: ServerContext["auth"] }): string | null
 }
 
 function requireOwner(ctx: { auth: ServerContext["auth"] }): void {
-  if (authenticatedEmail(ctx) !== OWNER_EMAIL) {
+  const email = authenticatedEmail(ctx);
+  if (!email || !isOwnerEmail(email)) {
     throw new Error("Only the artifact owner can perform this action.");
   }
 }
@@ -141,7 +143,7 @@ async function publishAsOwner(
 
   if (input.artifactId) {
     const artifact = await ctx.db.artifacts.get(input.artifactId);
-    if (!artifact || normalizeEmail(artifact.ownerEmail) !== OWNER_EMAIL) {
+    if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
       throw new Error("Artifact not found.");
     }
 
@@ -174,7 +176,7 @@ async function publishAsOwner(
     title: validated.title,
     slug: validated.slug,
     ownerId,
-    ownerEmail: OWNER_EMAIL,
+    ownerEmail: PRIMARY_OWNER_EMAIL,
     sharedWith: JSON.stringify(validated.sharedWith),
     sizeBytes: String(validated.sizeBytes),
     chunkCount: String(input.chunks.length)
@@ -190,12 +192,13 @@ export default capsule({
 
   queries: {
     ownedArtifacts: query(async (ctx) => {
-      if (authenticatedEmail(ctx) !== OWNER_EMAIL) {
+      const email = authenticatedEmail(ctx);
+      if (!email || !isOwnerEmail(email)) {
         return [];
       }
 
       const artifacts = await ctx.db.artifacts
-        .withIndex("by_owner_email", (q) => q.eq("ownerEmail", OWNER_EMAIL))
+        .withIndex("by_owner_email", (q) => q.eq("ownerEmail", PRIMARY_OWNER_EMAIL))
         .order("desc")
         .collect();
 
@@ -220,7 +223,7 @@ export default capsule({
       }
 
       const sharedWith = parseSharedEmails(artifact.sharedWith);
-      if (email !== OWNER_EMAIL && !sharedWith.includes(email)) {
+      if (!isOwnerEmail(email) && !sharedWith.includes(email)) {
         return null;
       }
 
@@ -236,7 +239,7 @@ export default capsule({
         html: chunks.map((chunk) => chunk.content).join(""),
         sizeBytes: Number(artifact.sizeBytes),
         updatedAt: artifact.updatedAt,
-        sharedWith: email === OWNER_EMAIL ? sharedWith : []
+        sharedWith: isOwnerEmail(email) ? sharedWith : []
       };
     })
   },
@@ -250,7 +253,7 @@ export default capsule({
     setArtifactShares: mutation(async (ctx, artifactId: string, emails: string[]) => {
       requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact || normalizeEmail(artifact.ownerEmail) !== OWNER_EMAIL) {
+      if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
         throw new Error("Artifact not found.");
       }
       if (!Array.isArray(emails) || emails.length > MAX_SHARED_EMAILS) {
@@ -267,7 +270,7 @@ export default capsule({
     deleteArtifact: mutation(async (ctx, artifactId: string) => {
       requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact || normalizeEmail(artifact.ownerEmail) !== OWNER_EMAIL) {
+      if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
         throw new Error("Artifact not found.");
       }
 
@@ -333,7 +336,7 @@ export default capsule({
             chunks: chunkHtml(body.html),
             sharedWith
           },
-          `automation:${OWNER_EMAIL}`
+          `automation:${PRIMARY_OWNER_EMAIL}`
         );
         return json({ ...result, updated: Boolean(existing) }, { status: existing ? 200 : 201 });
       } catch (error) {

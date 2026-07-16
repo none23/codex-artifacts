@@ -1,4 +1,10 @@
-export const OWNER_EMAIL = "n.anisimov.23@gmail.com";
+export const OWNER_EMAILS = [
+  "n.anisimov.23@gmail.com",
+  "nanisimov@dataart.com",
+  "nwsome23@gmail.com"
+] as const;
+
+export const PRIMARY_OWNER_EMAIL = OWNER_EMAILS[0];
 
 export const MAX_ARTIFACT_BYTES = 512 * 1024;
 export const MAX_CHUNK_BYTES = 48 * 1024;
@@ -6,6 +12,11 @@ export const MAX_SHARED_EMAILS = 50;
 
 export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+export function isOwnerEmail(value: string): boolean {
+  const email = normalizeEmail(value);
+  return OWNER_EMAILS.some((ownerEmail) => ownerEmail === email);
 }
 
 export function cleanTitle(value: string): string {
@@ -37,7 +48,7 @@ export function normalizeSharedEmails(values: string[]): string[] {
 
   for (const value of values) {
     const email = normalizeEmail(value);
-    if (email && email !== OWNER_EMAIL) {
+    if (email && !isOwnerEmail(email)) {
       unique.add(email);
     }
   }
