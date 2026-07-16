@@ -8,8 +8,8 @@ function usage() {
   node scripts/publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com]
 
 Environment:
-  ARTIFACTS_URL             Deployed app URL, for example https://my-app.lakebed.app
-  ARTIFACTS_PUBLISH_TOKEN   Value configured as PUBLISH_TOKEN on Lakebed`);
+  ARTIFACTS_URL             Optional deployed app URL override
+  ARTIFACTS_PUBLISH_TOKEN   Optional token override; defaults to PUBLISH_TOKEN in .env.lakebed.server`);
 }
 
 function option(args, name) {
@@ -19,8 +19,19 @@ function option(args, name) {
 
 const args = process.argv.slice(2);
 const fileArg = args.find((arg) => !arg.startsWith("--") && ![option(args, "--title"), option(args, "--slug"), option(args, "--share")].includes(arg));
-const baseUrl = process.env.ARTIFACTS_URL?.replace(/\/$/, "");
-const token = process.env.ARTIFACTS_PUBLISH_TOKEN;
+const baseUrl = (process.env.ARTIFACTS_URL ?? "https://codex-artifacts.lakebed.app").replace(/\/$/, "");
+
+async function readLocalToken() {
+  try {
+    const env = await readFile(resolve(".env.lakebed.server"), "utf8");
+    const line = env.split(/\r?\n/).find((value) => value.startsWith("PUBLISH_TOKEN="));
+    return line?.slice("PUBLISH_TOKEN=".length).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+const token = process.env.ARTIFACTS_PUBLISH_TOKEN ?? process.env.PUBLISH_TOKEN ?? await readLocalToken();
 
 if (!fileArg || !baseUrl || !token) {
   usage();

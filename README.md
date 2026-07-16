@@ -58,14 +58,12 @@ npx lakebed@0.0.29 domains add codex-artifacts.lakebed.app
 ## Publish from Codex or a terminal
 
 ```sh
-export ARTIFACTS_URL=https://codex-artifacts.lakebed.app
-export ARTIFACTS_PUBLISH_TOKEN=<the PUBLISH_TOKEN value>
 node scripts/publish.mjs ./report.html \
   --title "Architecture report" \
   --share teammate@example.com
 ```
 
-The command prints the private artifact URL. Recipients must open that URL and sign in with the exact Google email supplied in `--share`.
+When run from this repository, the script uses the production URL and reads `PUBLISH_TOKEN` from the ignored `.env.lakebed.server` automatically. `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` remain available as overrides. The command prints the private artifact URL. Recipients must open that URL and sign in with the exact Google email supplied in `--share`.
 
 Do not commit `.env.lakebed.server` or place the publish token in an artifact.
 
