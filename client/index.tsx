@@ -14,10 +14,9 @@ import { useMemo, useState } from "preact/hooks";
 import type app from "../server";
 import {
   MAX_ARTIFACT_BYTES,
-  OWNER_EMAIL,
   chunkHtml,
   cleanSlug,
-  normalizeEmail
+  isOwnerEmail
 } from "../shared/config";
 
 const client = createClient<typeof app>();
@@ -339,8 +338,7 @@ function RootPage() {
   const auth = useAuth();
   if (auth.isLoading) return <main className="grid min-h-[70vh] place-items-center text-slate-500">Checking session…</main>;
   if (auth.isGuest) return <SignInCard />;
-  const email = normalizeEmail(auth.email ?? "");
-  return email === OWNER_EMAIL ? <OwnerDashboard /> : <NonOwnerHome />;
+  return isOwnerEmail(auth.email ?? "") ? <OwnerDashboard /> : <NonOwnerHome />;
 }
 
 function ArtifactPage() {

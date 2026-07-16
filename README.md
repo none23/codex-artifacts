@@ -3,7 +3,7 @@
 A private-by-default HTML artifact service built as a [Lakebed](https://lakebed.dev) capsule.
 
 - Google authentication is provided by Lakebed.
-- `owner@example.com` is the only owner and publisher through the web UI.
+- Owner access is configured through `OWNER_EMAILS` in `shared/config.ts`; all listed verified Google emails can manage every artifact.
 - New artifacts have no recipients by default.
 - The owner can grant access to exact, normalized Google email addresses.
 - Artifact HTML runs in a sandboxed iframe without `allow-same-origin`, keeping it away from the authenticated parent app.
