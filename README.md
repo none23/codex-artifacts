@@ -5,7 +5,8 @@ A private-by-default HTML artifact service built as a [Lakebed](https://lakebed.
 - Google authentication is provided by Lakebed.
 - Owner access is configured through `OWNER_EMAILS` in `shared/config.ts`; all listed verified Google emails can manage every artifact.
 - New artifacts have no recipients by default.
-- The owner can grant access to exact, normalized Google email addresses.
+- Owners can grant access to exact Google emails, verified-email domains, or anyone with the link.
+- Added recipient emails are remembered in browser localStorage for future autocomplete.
 - Artifact HTML runs in a sandboxed iframe without `allow-same-origin`, keeping it away from the authenticated parent app.
 - Codex and other local agents can publish through a server-secret-protected HTTP endpoint.
 
@@ -70,6 +71,8 @@ Successful publishes open automatically in the default browser. Pass `--no-open`
 Do not commit `.env.lakebed.server` or place the publish token in an artifact.
 
 Production: <https://codex-artifacts.lakebed.app>
+
+Open an artifact and use the **Access** control in its viewer bar to manage people, domains, and public visibility. Domain rules match the verified Google email suffix exactly; for example, `dataart.com` grants access to every signed-in `@dataart.com` address. Public artifacts require no sign-in.
 
 ## Global Codex skill
 
