@@ -83,3 +83,13 @@ ln -s /home/n/misc/artifacts/skills/create-artifact /home/n/.codex/skills/create
 ```
 
 Then ask Codex to “create an artifact,” “publish this as a visual report,” or invoke `$create-artifact` explicitly. The skill creates a self-contained HTML page, publishes it privately, and returns the URL. Reusing an existing artifact slug updates the same URL.
+
+## Claude Code skill
+
+The Claude-specific wrapper lives at `integrations/claude/skills/codex-artifacts`. Install it for the current user:
+
+```sh
+ln -s /home/n/misc/artifacts/integrations/claude/skills/codex-artifacts /home/n/.claude/skills/codex-artifacts
+```
+
+Invoke it explicitly with `/codex-artifacts`. It sets `disable-model-invocation: true`, so ordinary artifact requests continue to use Claude Code's built-in feature while this command publishes through Lakebed.
