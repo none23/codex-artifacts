@@ -14,6 +14,14 @@ description: Create and privately publish self-contained HTML artifacts. Use for
 - Keep UTF-8 below 512 KiB.
 - Remove unrequested secrets, credentials, private URLs, and personal data. Never expose publishing tokens or `.env.lakebed.server`.
 
+## UI Design
+- Make sure there is sufficient contrast in the colors, so that texts stay readable and accessible
+- Default to a dark theme
+- Avoid navy and teal colorscheme
+- Avoid elements that don't add meaning to the reader, e.g. unnecessary tags, icons that don't convey meaning, unnecessary cards
+- The main goal should be to keep the design easy for a human to scan and understand
+
+
 ## Publish
 
 ```sh
