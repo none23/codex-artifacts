@@ -1,4 +1,5 @@
 import {
+  boolean,
   capsule,
   endpoint,
   id,
@@ -14,13 +15,16 @@ import {
 import {
   MAX_ARTIFACT_BYTES,
   MAX_CHUNK_BYTES,
+  MAX_SHARED_DOMAINS,
   MAX_SHARED_EMAILS,
   PRIMARY_OWNER_EMAIL,
   chunkHtml,
   cleanSlug,
   cleanTitle,
+  emailDomain,
   isOwnerEmail,
   normalizeEmail,
+  normalizeSharedDomains,
   normalizeSharedEmails,
   parseSharedEmails,
   utf8Bytes
@@ -33,6 +37,8 @@ const schema = {
     ownerId: string(),
     ownerEmail: string(),
     sharedWith: string().default("[]"),
+    sharedDomains: string().default("[]"),
+    isPublic: boolean().default(false),
     sizeBytes: string(),
     chunkCount: string()
   })
@@ -178,6 +184,8 @@ async function publishAsOwner(
     ownerId,
     ownerEmail: PRIMARY_OWNER_EMAIL,
     sharedWith: JSON.stringify(validated.sharedWith),
+    sharedDomains: "[]",
+    isPublic: false,
     sizeBytes: String(validated.sizeBytes),
     chunkCount: String(input.chunks.length)
   });
@@ -204,16 +212,13 @@ export default capsule({
 
       return artifacts.map((artifact) => ({
         ...artifact,
-        sharedWith: parseSharedEmails(artifact.sharedWith)
+        sharedWith: parseSharedEmails(artifact.sharedWith),
+        sharedDomains: parseSharedEmails(artifact.sharedDomains),
+        isPublic: artifact.isPublic === true
       }));
     }),
 
     artifactBySlug: query(async (ctx, slugInput: string) => {
-      const email = authenticatedEmail(ctx);
-      if (!email) {
-        return null;
-      }
-
       const slug = cleanSlug(slugInput);
       const artifact = await ctx.db.artifacts
         .withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -223,7 +228,18 @@ export default capsule({
       }
 
       const sharedWith = parseSharedEmails(artifact.sharedWith);
-      if (!isOwnerEmail(email) && !sharedWith.includes(email)) {
+      const sharedDomains = parseSharedEmails(artifact.sharedDomains);
+      const isPublic = artifact.isPublic === true;
+      const email = authenticatedEmail(ctx);
+      const canManage = Boolean(email && isOwnerEmail(email));
+      const canView =
+        isPublic ||
+        canManage ||
+        Boolean(email && (
+          sharedWith.includes(email) ||
+          sharedDomains.includes(emailDomain(email))
+        ));
+      if (!canView) {
         return null;
       }
 
@@ -239,7 +255,10 @@ export default capsule({
         html: chunks.map((chunk) => chunk.content).join(""),
         sizeBytes: Number(artifact.sizeBytes),
         updatedAt: artifact.updatedAt,
-        sharedWith: isOwnerEmail(email) ? sharedWith : []
+        isPublic,
+        canManage,
+        sharedWith: canManage ? sharedWith : [],
+        sharedDomains: canManage ? sharedDomains : []
       };
     })
   },
@@ -250,21 +269,31 @@ export default capsule({
       return publishAsOwner(ctx, input, ctx.auth.userId);
     }),
 
-    setArtifactShares: mutation(async (ctx, artifactId: string, emails: string[]) => {
+    setArtifactAccess: mutation(async (
+      ctx,
+      artifactId: string,
+      access: { emails: string[]; domains: string[]; isPublic: boolean }
+    ) => {
       requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
       if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
         throw new Error("Artifact not found.");
       }
-      if (!Array.isArray(emails) || emails.length > MAX_SHARED_EMAILS) {
+      if (!Array.isArray(access.emails) || access.emails.length > MAX_SHARED_EMAILS) {
         throw new Error(`At most ${MAX_SHARED_EMAILS} people can be added.`);
       }
+      if (!Array.isArray(access.domains) || access.domains.length > MAX_SHARED_DOMAINS) {
+        throw new Error(`At most ${MAX_SHARED_DOMAINS} domains can be added.`);
+      }
 
-      const sharedWith = normalizeSharedEmails(emails);
+      const sharedWith = normalizeSharedEmails(access.emails);
+      const sharedDomains = normalizeSharedDomains(access.domains);
       await ctx.db.artifacts.update(artifact.id, {
-        sharedWith: JSON.stringify(sharedWith)
+        sharedWith: JSON.stringify(sharedWith),
+        sharedDomains: JSON.stringify(sharedDomains),
+        isPublic: access.isPublic === true
       });
-      return sharedWith;
+      return { emails: sharedWith, domains: sharedDomains, isPublic: access.isPublic === true };
     }),
 
     deleteArtifact: mutation(async (ctx, artifactId: string) => {

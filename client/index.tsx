@@ -16,10 +16,15 @@ import {
   MAX_ARTIFACT_BYTES,
   chunkHtml,
   cleanSlug,
-  isOwnerEmail
+  isOwnerEmail,
+  isValidDomain,
+  isValidEmail,
+  normalizeDomain,
+  normalizeEmail
 } from "../shared/config";
 
 const client = createClient<typeof app>();
+const KNOWN_EMAILS_KEY = "codex-artifacts:known-emails";
 
 function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -40,6 +45,32 @@ function slugFromTitle(title: string): string {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function readKnownEmails(): string[] {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(KNOWN_EMAILS_KEY) ?? "[]");
+    return Array.isArray(value)
+      ? value.filter((email): email is string => typeof email === "string" && isValidEmail(email))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberEmails(values: string[]): string[] {
+  const emails = [...new Set([...readKnownEmails(), ...values.map(normalizeEmail)])]
+    .filter(isValidEmail)
+    .sort();
+  window.localStorage.setItem(KNOWN_EMAILS_KEY, JSON.stringify(emails));
+  return emails;
+}
+
+function accessLabel(access: { isPublic: boolean; sharedWith: string[]; sharedDomains: string[] }): string {
+  if (access.isPublic) return "Public";
+  const rules = access.sharedWith.length + access.sharedDomains.length;
+  if (!rules) return "Owners only";
+  return `${rules} access rule${rules === 1 ? "" : "s"}`;
 }
 
 function SignInCard({ shared = false }: { shared?: boolean }) {
@@ -152,27 +183,10 @@ type OwnedArtifact = NonNullable<ReturnType<typeof client.useQuery<"ownedArtifac
 
 function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
   const publishArtifact = client.useMutation("publishArtifact");
-  const setShares = client.useMutation("setArtifactShares");
   const deleteArtifact = client.useMutation("deleteArtifact");
-  const [emails, setEmails] = useState(artifact.sharedWith.join("\n"));
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const url = `${window.location.origin}/a/${artifact.slug}`;
-
-  async function saveShares() {
-    setBusy(true);
-    setStatus("");
-    try {
-      const values = emails.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
-      const saved = await setShares(artifact.id, values);
-      setEmails(saved.join("\n"));
-      setStatus("Sharing updated.");
-    } catch (caught) {
-      setStatus(messageFromError(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function replace(file: File | undefined) {
     if (!file) return;
@@ -212,18 +226,14 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
           <Link className="block truncate text-lg font-semibold text-white hover:text-cyan-200" to={`/a/${artifact.slug}`}>{artifact.title}</Link>
           <p className="mt-1 font-mono text-xs text-slate-500">{formatBytes(Number(artifact.sizeBytes))} · updated {formatDate(artifact.updatedAt)}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.sharedWith.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
-          {artifact.sharedWith.length ? `Shared with ${artifact.sharedWith.length}` : "Only you"}
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
+          {accessLabel(artifact)}
         </span>
       </div>
 
       <div className="mt-5 grid gap-3">
-        <label className="text-xs font-medium text-slate-400">
-          Share with emails <span className="font-normal text-slate-600">(one per line)</span>
-          <textarea className="mt-1.5 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-slate-950/60 p-3 text-sm text-slate-200 outline-none transition placeholder:text-slate-700 focus:border-cyan-400/60" onInput={(event) => setEmails(event.currentTarget.value)} placeholder="teammate@example.com" value={emails} />
-        </label>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100 disabled:opacity-50" disabled={busy} onClick={() => void saveShares()} type="button">Save sharing</button>
+          <Link className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100" to={`/a/${artifact.slug}`}>Open & manage access</Link>
           <button className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-white/30" onClick={() => void navigator.clipboard.writeText(url)} type="button">Copy link</button>
           <label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-white/30">
             Replace HTML
@@ -275,7 +285,159 @@ function NonOwnerHome() {
   );
 }
 
+type ViewedArtifact = Exclude<ReturnType<typeof client.useQuery<"artifactBySlug">>, null | undefined>;
+
+function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
+  const setArtifactAccess = client.useMutation("setArtifactAccess");
+  const [open, setOpen] = useState(false);
+  const [emails, setEmails] = useState<string[]>(artifact.sharedWith);
+  const [domains, setDomains] = useState<string[]>(artifact.sharedDomains);
+  const [isPublic, setIsPublic] = useState(artifact.isPublic);
+  const [emailInput, setEmailInput] = useState("");
+  const [domainInput, setDomainInput] = useState("");
+  const [knownEmails, setKnownEmails] = useState<string[]>(readKnownEmails);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function addEmail(event: SubmitEvent) {
+    event.preventDefault();
+    const email = normalizeEmail(emailInput);
+    if (!isValidEmail(email)) {
+      setStatus("Enter a valid email address.");
+      return;
+    }
+    if (isOwnerEmail(email)) {
+      setStatus("That address already has owner access.");
+      return;
+    }
+    setEmails((current) => current.includes(email) ? current : [...current, email]);
+    setKnownEmails(rememberEmails([email]));
+    setEmailInput("");
+    setStatus("");
+  }
+
+  function addDomain(event: SubmitEvent) {
+    event.preventDefault();
+    const domain = normalizeDomain(domainInput);
+    if (!isValidDomain(domain)) {
+      setStatus("Enter a valid domain, such as example.com.");
+      return;
+    }
+    setDomains((current) => current.includes(domain) ? current : [...current, domain]);
+    setDomainInput("");
+    setStatus("");
+  }
+
+  async function save() {
+    setBusy(true);
+    setStatus("");
+    try {
+      const saved = await setArtifactAccess(artifact.id, { emails, domains, isPublic });
+      setEmails(saved.emails);
+      setDomains(saved.domains);
+      setIsPublic(saved.isPublic);
+      setKnownEmails(rememberEmails(saved.emails));
+      setStatus("Access updated.");
+    } catch (caught) {
+      setStatus(messageFromError(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        aria-expanded={open}
+        className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-white/30"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        Access · {accessLabel({ isPublic, sharedWith: emails, sharedDomains: domains })}
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-[calc(100%+0.6rem)] z-30 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-white/15 bg-slate-950 p-5 text-left shadow-2xl shadow-black/50" role="dialog" aria-label="Artifact access settings">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-semibold text-white">Access settings</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Changes apply to this artifact only.</p>
+            </div>
+            <button aria-label="Close access settings" className="text-lg leading-none text-slate-500 hover:text-white" onClick={() => setOpen(false)} type="button">×</button>
+          </div>
+
+          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3">
+            <input checked={isPublic} className="mt-0.5 h-4 w-4 accent-cyan-300" onChange={(event) => setIsPublic(event.currentTarget.checked)} type="checkbox" />
+            <span>
+              <span className="block text-sm font-medium text-white">Public link</span>
+              <span className="mt-0.5 block text-xs leading-5 text-slate-500">Anyone with the link can view without signing in.</span>
+            </span>
+          </label>
+
+          <div className="mt-5">
+            <label className="text-xs font-medium text-slate-400" htmlFor="artifact-access-email">People</label>
+            <form className="mt-1.5 flex gap-2" onSubmit={(event) => addEmail(event)}>
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/60"
+                id="artifact-access-email"
+                list="artifact-known-emails"
+                onInput={(event) => setEmailInput(event.currentTarget.value)}
+                placeholder="person@example.com"
+                type="email"
+                value={emailInput}
+              />
+              <datalist id="artifact-known-emails">
+                {knownEmails.filter((email) => !emails.includes(email)).map((email) => <option key={email} value={email} />)}
+              </datalist>
+              <button className="rounded-lg border border-white/10 px-3 text-xs font-medium text-slate-300 hover:border-white/30" type="submit">Add</button>
+            </form>
+            {emails.length ? (
+              <ul className="mt-2 grid gap-1">
+                {emails.map((email) => (
+                  <li className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.04] px-3 py-2 text-xs text-slate-300" key={email}>
+                    <span className="truncate">{email}</span>
+                    <button aria-label={`Remove ${email}`} className="text-slate-500 hover:text-red-300" onClick={() => setEmails((current) => current.filter((value) => value !== email))} type="button">Remove</button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="mt-5">
+            <label className="text-xs font-medium text-slate-400" htmlFor="artifact-access-domain">Domains</label>
+            <form className="mt-1.5 flex gap-2" onSubmit={(event) => addDomain(event)}>
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/60"
+                id="artifact-access-domain"
+                onInput={(event) => setDomainInput(event.currentTarget.value)}
+                placeholder="example.com"
+                value={domainInput}
+              />
+              <button className="rounded-lg border border-white/10 px-3 text-xs font-medium text-slate-300 hover:border-white/30" type="submit">Add</button>
+            </form>
+            {domains.length ? (
+              <ul className="mt-2 grid gap-1">
+                {domains.map((domain) => (
+                  <li className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.04] px-3 py-2 text-xs text-slate-300" key={domain}>
+                    <span className="truncate">@{domain}</span>
+                    <button aria-label={`Remove ${domain}`} className="text-slate-500 hover:text-red-300" onClick={() => setDomains((current) => current.filter((value) => value !== domain))} type="button">Remove</button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
+            <p className="text-xs text-slate-500">{status}</p>
+            <button className="rounded-lg bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 disabled:opacity-50" disabled={busy} onClick={() => void save()} type="button">{busy ? "Saving…" : "Save access"}</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ArtifactFrame() {
+  const auth = useAuth();
   const { slug = "" } = useParams<{ slug: string }>();
   const artifact = client.useQuery("artifactBySlug", slug);
   const [copied, setCopied] = useState(false);
@@ -288,6 +450,9 @@ function ArtifactFrame() {
     return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
   }
   if (artifact === null) {
+    if (auth.isGuest) {
+      return <SignInCard shared />;
+    }
     return (
       <main className="mx-auto grid min-h-screen max-w-xl place-content-center px-6 py-24 text-center">
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-red-300">Not available</p>
@@ -318,9 +483,10 @@ function ArtifactFrame() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {artifact.canManage ? <AccessControl artifact={artifact} /> : null}
           <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-white/30" onClick={() => void copySource()} type="button">{copied ? "Copied" : "Copy source"}</button>
           <a className="rounded-lg bg-cyan-300 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200" download={`${artifact.slug}.html`} href={downloadUrl}>Download HTML</a>
-          <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:border-white/30 hover:text-white" onClick={() => signOut()} type="button">Sign out</button>
+          {!auth.isGuest ? <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:border-white/30 hover:text-white" onClick={() => signOut()} type="button">Sign out</button> : null}
         </div>
       </header>
       <iframe
@@ -344,7 +510,6 @@ function RootPage() {
 function ArtifactPage() {
   const auth = useAuth();
   if (auth.isLoading) return <main className="grid min-h-[70vh] place-items-center text-slate-500">Checking session…</main>;
-  if (auth.isGuest) return <SignInCard shared />;
   return <ArtifactFrame />;
 }
 
