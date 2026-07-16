@@ -7,6 +7,7 @@ import {
   createClient,
   signOut,
   useAuth,
+  useLocation,
   useParams
 } from "lakebed/client";
 import { useMemo, useState } from "preact/hooks";
@@ -44,7 +45,7 @@ function messageFromError(error: unknown): string {
 
 function SignInCard({ shared = false }: { shared?: boolean }) {
   return (
-    <section className="mx-auto flex min-h-[70vh] max-w-xl items-center px-6 py-16">
+    <section className={`mx-auto flex max-w-xl items-center px-6 py-16 ${shared ? "min-h-screen" : "min-h-[70vh]"}`}>
       <div className="w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl shadow-cyan-950/20 backdrop-blur">
         <p className="mb-4 font-mono text-xs uppercase tracking-[0.24em] text-cyan-300">Private workspace</p>
         <h1 className="text-3xl font-semibold tracking-tight text-white">
@@ -285,14 +286,18 @@ function ArtifactFrame() {
   }, [artifact?.html]);
 
   if (artifact === undefined) {
-    return <main className="grid min-h-[calc(100vh-74px)] place-items-center text-slate-500">Opening artifact…</main>;
+    return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
   }
   if (artifact === null) {
     return (
-      <main className="mx-auto max-w-xl px-6 py-24 text-center">
+      <main className="mx-auto grid min-h-screen max-w-xl place-content-center px-6 py-24 text-center">
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-red-300">Not available</p>
         <h1 className="mt-4 text-3xl font-semibold text-white">This artifact does not exist, or it was not shared with your email.</h1>
         <p className="mt-4 text-slate-500">Ask the owner to add the exact Google email you used to sign in.</p>
+        <div className="mt-7 flex justify-center gap-3">
+          <Link className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/30" to="/">Back</Link>
+          <button className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-100" onClick={() => signOut()} type="button">Use another account</button>
+        </div>
       </main>
     );
   }
@@ -304,17 +309,21 @@ function ArtifactFrame() {
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-74px)] flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-900/70 px-4 py-3">
-        <div className="min-w-0">
-          <h1 className="truncate font-semibold text-white">{artifact.title}</h1>
-          <p className="font-mono text-[11px] text-slate-500">{formatBytes(artifact.sizeBytes)} · sandboxed preview</p>
+    <main className="flex min-h-screen flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link aria-label="Back to artifacts" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 text-lg text-slate-300 transition hover:border-white/30 hover:text-white" to="/">←</Link>
+          <div className="min-w-0">
+            <h1 className="truncate font-semibold text-white">{artifact.title}</h1>
+            <p className="font-mono text-[11px] text-slate-500">{formatBytes(artifact.sizeBytes)} · sandboxed preview</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-white/30" onClick={() => void copySource()} type="button">{copied ? "Copied" : "Copy source"}</button>
           <a className="rounded-lg bg-cyan-300 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200" download={`${artifact.slug}.html`} href={downloadUrl}>Download HTML</a>
+          <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:border-white/30 hover:text-white" onClick={() => signOut()} type="button">Sign out</button>
         </div>
-      </div>
+      </header>
       <iframe
         className="min-h-[700px] flex-1 border-0 bg-white"
         referrerPolicy="no-referrer"
@@ -341,20 +350,29 @@ function ArtifactPage() {
   return <ArtifactFrame />;
 }
 
+function AppContent() {
+  const location = useLocation();
+  const isArtifactRoute = location.pathname.startsWith("/a/");
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-300 selection:text-slate-950">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(59,130,246,0.08),transparent_28%)]" />
+      <div className="relative">
+        {isArtifactRoute ? null : <AppHeader />}
+        <Routes>
+          <Route element={<RootPage />} path="/" />
+          <Route element={<ArtifactPage />} path="/a/:slug" />
+          <Route element={<main className="mx-auto max-w-xl px-6 py-24 text-center"><h1 className="text-4xl font-semibold text-white">Not found</h1><Link className="mt-5 inline-block text-cyan-300 hover:text-cyan-200" to="/">Back home</Link></main>} path="*" />
+        </Routes>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-300 selection:text-slate-950">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(59,130,246,0.08),transparent_28%)]" />
-        <div className="relative">
-          <AppHeader />
-          <Routes>
-            <Route element={<RootPage />} path="/" />
-            <Route element={<ArtifactPage />} path="/a/:slug" />
-            <Route element={<main className="mx-auto max-w-xl px-6 py-24 text-center"><h1 className="text-4xl font-semibold text-white">Not found</h1><Link className="mt-5 inline-block text-cyan-300 hover:text-cyan-200" to="/">Back home</Link></main>} path="*" />
-          </Routes>
-        </div>
-      </div>
+      <AppContent />
     </Router>
   );
 }

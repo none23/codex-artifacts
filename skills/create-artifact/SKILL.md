@@ -10,7 +10,7 @@ description: Create and privately publish self-contained HTML artifacts. Use for
 - Create one responsive, accessible HTML page from verified context; add only useful interactivity.
 - Default to `/tmp/codex-artifacts/<slug>.html`; use the repository only when requested or useful for versioning.
 - Inline all assets; use no network requests or multiple routes.
-- Prefer exact references and measured facts. Avoid repetitive cards, excessive centering, gratuitous gradients, and uniform rounding.
+- Prefer exact references and measured facts. Do not duplicate viewer branding or controls; avoid repetitive cards, excessive centering, gratuitous gradients, and uniform rounding.
 - Keep UTF-8 below 512 KiB.
 - Remove unrequested secrets, credentials, private URLs, and personal data. Never expose publishing tokens or `.env.lakebed.server`.
 
