@@ -68,3 +68,13 @@ When run from this repository, the script uses the production URL and reads `PUB
 Do not commit `.env.lakebed.server` or place the publish token in an artifact.
 
 Production: <https://codex-artifacts.lakebed.app>
+
+## Global Codex skill
+
+The reusable skill lives at `skills/create-artifact`. Link it into the user-level Codex skill directory so every new session can discover it:
+
+```sh
+ln -s /home/n/misc/artifacts/skills/create-artifact /home/n/.codex/skills/create-artifact
+```
+
+Then ask Codex to “create an artifact,” “publish this as a visual report,” or invoke `$create-artifact` explicitly. The skill creates a self-contained HTML page, publishes it privately, and returns the URL. Reusing an existing artifact slug updates the same URL.

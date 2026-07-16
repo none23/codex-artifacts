@@ -312,18 +312,30 @@ export default capsule({
 
         const title = cleanTitle(body.title);
         const fallbackSlug = `${cleanSlug(title) || "artifact"}-${Date.now().toString(36)}`;
-        const slug = typeof body.slug === "string" && cleanSlug(body.slug)
-          ? cleanSlug(body.slug)
-          : fallbackSlug;
+        const requestedSlug = typeof body.slug === "string" ? cleanSlug(body.slug) : "";
+        const slug = requestedSlug || fallbackSlug;
+        const existing = requestedSlug
+          ? await ctx.db.artifacts
+              .withIndex("by_slug", (q) => q.eq("slug", requestedSlug))
+              .first()
+          : null;
         const sharedWith = Array.isArray(body.sharedWith)
           ? body.sharedWith.filter((value): value is string => typeof value === "string")
-          : [];
+          : existing
+            ? parseSharedEmails(existing.sharedWith)
+            : [];
         const result = await publishAsOwner(
           ctx as AppContext,
-          { title, slug, chunks: chunkHtml(body.html), sharedWith },
+          {
+            artifactId: existing?.id,
+            title,
+            slug,
+            chunks: chunkHtml(body.html),
+            sharedWith
+          },
           `automation:${OWNER_EMAIL}`
         );
-        return json(result, { status: 201 });
+        return json({ ...result, updated: Boolean(existing) }, { status: existing ? 200 : 201 });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to publish artifact.";
         return json({ error: message }, { status: 400 });
