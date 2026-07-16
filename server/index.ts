@@ -17,12 +17,11 @@ import {
   MAX_CHUNK_BYTES,
   MAX_SHARED_DOMAINS,
   MAX_SHARED_EMAILS,
-  PRIMARY_OWNER_EMAIL,
   chunkHtml,
   cleanSlug,
   cleanTitle,
   emailDomain,
-  isOwnerEmail,
+  isValidEmail,
   normalizeEmail,
   normalizeSharedDomains,
   normalizeSharedEmails,
@@ -52,6 +51,7 @@ const schema = {
 };
 
 type AppContext = ServerContext<WriteDatabaseForSchema<typeof schema>>;
+type EnvironmentContext = { env: ServerContext["env"] };
 
 type PublishInput = {
   artifactId?: string;
@@ -59,7 +59,28 @@ type PublishInput = {
   slug: string;
   chunks: string[];
   sharedWith?: string[];
+  isPublic?: boolean;
 };
+
+function ownerEmails(ctx: EnvironmentContext): string[] {
+  const configured = (ctx.env.OWNER_EMAILS ?? "")
+    .split(",")
+    .map(normalizeEmail)
+    .filter(isValidEmail);
+  const emails = [...new Set(configured)];
+  if (!emails.length) {
+    throw new Error("OWNER_EMAILS must contain at least one valid email address.");
+  }
+  return emails;
+}
+
+function primaryOwnerEmail(ctx: EnvironmentContext): string {
+  return ownerEmails(ctx)[0]!;
+}
+
+function isConfiguredOwner(ctx: EnvironmentContext, value: string): boolean {
+  return ownerEmails(ctx).includes(normalizeEmail(value));
+}
 
 function authenticatedEmail(ctx: { auth: ServerContext["auth"] }): string | null {
   if (
@@ -73,9 +94,9 @@ function authenticatedEmail(ctx: { auth: ServerContext["auth"] }): string | null
   return normalizeEmail(ctx.auth.email);
 }
 
-function requireOwner(ctx: { auth: ServerContext["auth"] }): void {
+function requireOwner(ctx: { auth: ServerContext["auth"]; env: ServerContext["env"] }): void {
   const email = authenticatedEmail(ctx);
-  if (!email || !isOwnerEmail(email)) {
+  if (!email || !isConfiguredOwner(ctx, email)) {
     throw new Error("Only the artifact owner can perform this action.");
   }
 }
@@ -103,11 +124,11 @@ function validateChunks(chunks: string[]): number {
   return total;
 }
 
-function validatePublishInput(input: PublishInput) {
+function validatePublishInput(input: PublishInput, configuredOwners: string[]) {
   const title = cleanTitle(input.title);
   const slug = cleanSlug(input.slug);
   const sizeBytes = validateChunks(input.chunks);
-  const sharedWith = normalizeSharedEmails(input.sharedWith ?? []);
+  const sharedWith = normalizeSharedEmails(input.sharedWith ?? [], configuredOwners);
 
   if (!title) {
     throw new Error("Title is required.");
@@ -145,11 +166,12 @@ async function publishAsOwner(
   input: PublishInput,
   ownerId: string
 ): Promise<{ id: string; slug: string }> {
-  const validated = validatePublishInput(input);
+  const configuredOwners = ownerEmails(ctx);
+  const validated = validatePublishInput(input, configuredOwners);
 
   if (input.artifactId) {
     const artifact = await ctx.db.artifacts.get(input.artifactId);
-    if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
+    if (!artifact) {
       throw new Error("Artifact not found.");
     }
 
@@ -165,6 +187,7 @@ async function publishAsOwner(
       title: validated.title,
       slug: validated.slug,
       sharedWith: JSON.stringify(validated.sharedWith),
+      isPublic: input.isPublic ?? artifact.isPublic,
       sizeBytes: String(validated.sizeBytes),
       chunkCount: String(input.chunks.length)
     });
@@ -182,10 +205,10 @@ async function publishAsOwner(
     title: validated.title,
     slug: validated.slug,
     ownerId,
-    ownerEmail: PRIMARY_OWNER_EMAIL,
+    ownerEmail: configuredOwners[0]!,
     sharedWith: JSON.stringify(validated.sharedWith),
     sharedDomains: "[]",
-    isPublic: false,
+    isPublic: input.isPublic === true,
     sizeBytes: String(validated.sizeBytes),
     chunkCount: String(input.chunks.length)
   });
@@ -199,16 +222,29 @@ export default capsule({
   schema,
 
   queries: {
+    viewer: query((ctx) => {
+      const email = authenticatedEmail(ctx);
+      return { isOwner: Boolean(email && isConfiguredOwner(ctx, email)) };
+    }),
+
     ownedArtifacts: query(async (ctx) => {
       const email = authenticatedEmail(ctx);
-      if (!email || !isOwnerEmail(email)) {
+      if (!email || !isConfiguredOwner(ctx, email)) {
         return [];
       }
 
-      const artifacts = await ctx.db.artifacts
-        .withIndex("by_owner_email", (q) => q.eq("ownerEmail", PRIMARY_OWNER_EMAIL))
-        .order("desc")
-        .collect();
+      const artifactGroups = [];
+      for (const ownerEmail of ownerEmails(ctx)) {
+        artifactGroups.push(
+          await ctx.db.artifacts
+            .withIndex("by_owner_email", (q) => q.eq("ownerEmail", ownerEmail))
+            .order("desc")
+            .collect()
+        );
+      }
+      const artifacts = artifactGroups
+        .flat()
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
       return artifacts.map((artifact) => ({
         ...artifact,
@@ -231,7 +267,8 @@ export default capsule({
       const sharedDomains = parseSharedEmails(artifact.sharedDomains);
       const isPublic = artifact.isPublic === true;
       const email = authenticatedEmail(ctx);
-      const canManage = Boolean(email && isOwnerEmail(email));
+      const configuredOwners = ownerEmails(ctx);
+      const canManage = Boolean(email && configuredOwners.includes(email));
       const canView =
         isPublic ||
         canManage ||
@@ -257,6 +294,7 @@ export default capsule({
         updatedAt: artifact.updatedAt,
         isPublic,
         canManage,
+        ownerEmails: canManage ? configuredOwners : [],
         sharedWith: canManage ? sharedWith : [],
         sharedDomains: canManage ? sharedDomains : []
       };
@@ -276,7 +314,7 @@ export default capsule({
     ) => {
       requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
+      if (!artifact) {
         throw new Error("Artifact not found.");
       }
       if (!Array.isArray(access.emails) || access.emails.length > MAX_SHARED_EMAILS) {
@@ -286,7 +324,7 @@ export default capsule({
         throw new Error(`At most ${MAX_SHARED_DOMAINS} domains can be added.`);
       }
 
-      const sharedWith = normalizeSharedEmails(access.emails);
+      const sharedWith = normalizeSharedEmails(access.emails, ownerEmails(ctx));
       const sharedDomains = normalizeSharedDomains(access.domains);
       await ctx.db.artifacts.update(artifact.id, {
         sharedWith: JSON.stringify(sharedWith),
@@ -299,7 +337,7 @@ export default capsule({
     deleteArtifact: mutation(async (ctx, artifactId: string) => {
       requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact || !isOwnerEmail(artifact.ownerEmail)) {
+      if (!artifact) {
         throw new Error("Artifact not found.");
       }
 
@@ -337,6 +375,7 @@ export default capsule({
           slug?: unknown;
           html?: unknown;
           sharedWith?: unknown;
+          isPublic?: unknown;
         }>();
         if (typeof body.title !== "string" || typeof body.html !== "string") {
           return json({ error: "title and html must be strings" }, { status: 400 });
@@ -363,11 +402,23 @@ export default capsule({
             title,
             slug,
             chunks: chunkHtml(body.html),
-            sharedWith
+            sharedWith,
+            isPublic: typeof body.isPublic === "boolean"
+              ? body.isPublic
+              : existing?.isPublic === true
           },
-          `automation:${PRIMARY_OWNER_EMAIL}`
+          `automation:${primaryOwnerEmail(ctx)}`
         );
-        return json({ ...result, updated: Boolean(existing) }, { status: existing ? 200 : 201 });
+        return json(
+          {
+            ...result,
+            updated: Boolean(existing),
+            isPublic: typeof body.isPublic === "boolean"
+              ? body.isPublic
+              : existing?.isPublic === true
+          },
+          { status: existing ? 200 : 201 }
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to publish artifact.";
         return json({ error: message }, { status: 400 });

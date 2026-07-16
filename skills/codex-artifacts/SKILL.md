@@ -12,7 +12,7 @@ When invoked in Claude Code, do not use its built-in Artifact tool.
 ## Build
 
 - Create one responsive, accessible HTML page from verified context; add only useful interactivity.
-- Default to `/tmp/codex-artifacts/<slug>.html`; use the repository only when requested or useful for versioning.
+- Write temporary artifacts under the system temporary directory; use the repository only when requested or useful for versioning.
 - Inline all assets; use no network requests or multiple routes.
 - Prefer exact references and measured facts. Do not duplicate viewer branding or controls; avoid repetitive cards, excessive centering, gratuitous gradients, and uniform rounding.
 - Keep UTF-8 below 512 KiB.
@@ -29,11 +29,12 @@ When invoked in Claude Code, do not use its built-in Artifact tool.
 ## Publish
 
 ```sh
-node "/home/n/misc/artifacts/skills/codex-artifacts/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--no-open]
+node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-artifacts}/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--public] [--no-open]
 ```
 
 - Omit `--slug` to create; reuse a slug to update.
 - Omit `--share` for owner-only creation or to preserve recipients when updating. If supplied, it replaces the allowlist; include only user-named emails.
+- Use `--public` only when the user explicitly requests public access.
 - The publisher opens the URL after success; use `--no-open` for headless runs.
 
 Return the URL first, access, source path, and created/updated status.

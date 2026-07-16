@@ -16,7 +16,6 @@ import {
   MAX_ARTIFACT_BYTES,
   chunkHtml,
   cleanSlug,
-  isOwnerEmail,
   isValidDomain,
   isValidEmail,
   normalizeDomain,
@@ -306,7 +305,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
       setStatus("Enter a valid email address.");
       return;
     }
-    if (isOwnerEmail(email)) {
+    if (artifact.ownerEmails.includes(email)) {
       setStatus("That address already has owner access.");
       return;
     }
@@ -504,12 +503,18 @@ function RootPage() {
   const auth = useAuth();
   if (auth.isLoading) return <main className="grid min-h-[70vh] place-items-center text-slate-500">Checking session…</main>;
   if (auth.isGuest) return <SignInCard />;
-  return isOwnerEmail(auth.email ?? "") ? <OwnerDashboard /> : <NonOwnerHome />;
+  return <SignedInRoot />;
+}
+
+function SignedInRoot() {
+  const viewer = client.useQuery("viewer");
+  if (!viewer) {
+    return <main className="grid min-h-[70vh] place-items-center text-slate-500">Loading workspace…</main>;
+  }
+  return viewer.isOwner ? <OwnerDashboard /> : <NonOwnerHome />;
 }
 
 function ArtifactPage() {
-  const auth = useAuth();
-  if (auth.isLoading) return <main className="grid min-h-[70vh] place-items-center text-slate-500">Checking session…</main>;
   return <ArtifactFrame />;
 }
 

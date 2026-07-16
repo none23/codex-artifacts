@@ -1,86 +1,116 @@
 # Codex Artifacts
 
-A private-by-default HTML artifact service built as a [Lakebed](https://lakebed.dev) capsule.
+Codex Artifacts turns self-contained HTML files into shareable web pages with access control. It is designed for reports, dashboards, plans, walkthroughs, and other visual documents created by coding agents.
 
-- Google authentication is provided by Lakebed.
-- Owner access is configured through `OWNER_EMAILS` in `shared/config.ts`; all listed verified Google emails can manage every artifact.
-- New artifacts have no recipients by default.
-- Owners can grant access to exact Google emails, verified-email domains, or anyone with the link.
-- Added recipient emails are remembered in browser localStorage for future autocomplete.
-- Artifact HTML runs in a sandboxed iframe without `allow-same-origin`, keeping it away from the authenticated parent app.
-- Codex and other local agents can publish through a server-secret-protected HTTP endpoint.
+Artifacts are private by default. Owners can share an artifact with individual Google accounts, allow an entire email domain, or make it public.
 
-## Why Lakebed
+[View the public README demo](https://codex-artifacts.lakebed.app/a/readme-demo)
 
-Lakebed already includes Google auth, a database, hosting, deploy ownership, and a free hosted URL. Its object storage intentionally rejects HTML, so this capsule stores HTML in 48 KiB database chunks. Lakebed currently caps capsule state at 1 MiB and individual values at 64 KiB; this app caps each artifact at 512 KiB so updates and metadata have headroom. This is a good personal alpha, not a high-volume artifact archive.
+## What you get
 
-## Run locally
+- Google sign-in and verified-email access checks
+- Private-by-default artifact publishing
+- Per-artifact sharing by email, domain, or public link
+- A browser UI for uploading, replacing, downloading, and deleting artifacts
+- A shared Codex and Claude Code skill for agent-driven publishing
+- A command-line publisher that can update an existing artifact URL
+- Sandboxed HTML previews
 
-```sh
-npm run dev
+## Use it
+
+Once the service and skill are installed, ask your agent for an artifact:
+
+```text
+Use codex-artifacts to create and publish a visual architecture report for this repository.
 ```
 
-Local Lakebed state resets when the dev server restarts. Select a test identity with `npx lakebed@0.0.29 auth as alice`; local guest identities do not have a verified Google email, so owner-only UI is intentionally available only after real Google sign-in. The automation endpoint can be tested locally by copying the example env file first.
+Codex can select the skill automatically when the request calls for a shareable visual page. In Claude Code, invoke `/codex-artifacts` explicitly so it does not conflict with Claude's built-in artifact feature.
+
+You can also publish an existing HTML file from the repository:
 
 ```sh
+node scripts/publish.mjs ./report.html \
+  --title "Architecture report"
+```
+
+Useful options:
+
+```sh
+--slug architecture-report        # Reuse the same URL on future updates
+--share person@example.com        # Share with one or more exact emails
+--public                          # Allow anyone with the link to view
+--no-open                         # Do not open the result in a browser
+```
+
+Open a published artifact and use **Access** in the top bar to manage people, domains, and public visibility. Email suggestions are remembered locally in that browser.
+
+## Install
+
+You need Node.js, a Google account, and a free [Lakebed](https://lakebed.dev) deployment.
+
+### 1. Configure and deploy the service
+
+```sh
+git clone <repository-url> codex-artifacts
+cd codex-artifacts
 cp .env.lakebed.server.example .env.lakebed.server
-npm run dev
 ```
 
-## Deploy and claim
+Edit the ignored `.env.lakebed.server`:
 
-An anonymous preview can be deployed immediately:
+```dotenv
+OWNER_EMAILS=you@example.com,another-account@example.com
+PUBLISH_TOKEN=replace-with-a-long-random-secret
+ARTIFACTS_URL=https://your-artifacts.lakebed.app
+```
+
+Generate a publish token with `openssl rand -hex 32`. Then deploy and claim the app:
 
 ```sh
 npm run deploy
-```
-
-To make the deployment permanent and enable the automation secret, authenticate and claim it in a browser:
-
-```sh
 npx lakebed@0.0.29 auth login
 npx lakebed@0.0.29 claim
 ```
 
-Generate a long secret, write it to the ignored `.env.lakebed.server`, then redeploy:
+Set `ARTIFACTS_URL` to the URL Lakebed gives you and deploy once more so local publishing uses the final address:
 
 ```sh
-openssl rand -hex 32
-# Add the result as: PUBLISH_TOKEN=<result>
 npm run deploy
 ```
 
-Optionally reserve a stable Lakebed subdomain after claiming:
+### 2. Install the agent skill
+
+Link the same skill directory for Codex, Claude Code, or both:
 
 ```sh
-npx lakebed@0.0.29 domains add codex-artifacts.lakebed.app
+REPO_DIR="$(pwd)"
+
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+ln -sfn "$REPO_DIR/skills/codex-artifacts" \
+  "${CODEX_HOME:-$HOME/.codex}/skills/codex-artifacts"
+
+mkdir -p "$HOME/.claude/skills"
+ln -sfn "$REPO_DIR/skills/codex-artifacts" \
+  "$HOME/.claude/skills/codex-artifacts"
 ```
 
-## Publish from Codex or a terminal
+If your skill directory differs, set `CODEX_ARTIFACTS_SKILL_DIR` to the installed skill path. If the skill is copied away from the repository, set `CODEX_ARTIFACTS_ENV` to the absolute path of your `.env.lakebed.server`.
 
-```sh
-node scripts/publish.mjs ./report.html \
-  --title "Architecture report" \
-  --share teammate@example.com
-```
+## Configuration
 
-When run from this repository, the script uses the production URL and reads `PUBLISH_TOKEN` from the ignored `.env.lakebed.server` automatically. `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` remain available as overrides. The command prints the private artifact URL. Recipients must open that URL and sign in with the exact Google email supplied in `--share`.
+| Variable | Purpose |
+| --- | --- |
+| `OWNER_EMAILS` | Comma-separated Google accounts that can manage every artifact |
+| `PUBLISH_TOKEN` | Server secret accepted by the automation endpoint |
+| `ARTIFACTS_URL` | Public base URL used by the publishing script |
+| `ARTIFACTS_PUBLISH_TOKEN` | Optional local override for `PUBLISH_TOKEN` |
+| `ARTIFACTS_AUTO_OPEN=0` | Disables opening newly published artifacts |
+| `CODEX_ARTIFACTS_ENV` | Optional path to the publisher environment file |
 
-Successful publishes open automatically in the default browser. Pass `--no-open` or set `ARTIFACTS_AUTO_OPEN=0` to disable this.
+Never commit `.env.lakebed.server`, `lakebed.json`, or a publish token.
 
-Do not commit `.env.lakebed.server` or place the publish token in an artifact.
+## How it works
 
-Production: <https://codex-artifacts.lakebed.app>
+The project is a small Lakebed capsule. Lakebed supplies Google authentication, storage, and hosting. Artifact HTML is split into database-safe chunks and rendered in a sandboxed iframe without `allow-same-origin`, keeping it isolated from the authenticated application.
 
-Open an artifact and use the **Access** control in its viewer bar to manage people, domains, and public visibility. Domain rules match the verified Google email suffix exactly; for example, `dataart.com` grants access to every signed-in `@dataart.com` address. Public artifacts require no sign-in.
-
-## Codex and Claude skill
-
-The shared skill lives at `skills/codex-artifacts`. Link the same directory into both user-level skill locations:
-
-```sh
-ln -s /home/n/misc/artifacts/skills/codex-artifacts /home/n/.codex/skills/codex-artifacts
-ln -s /home/n/misc/artifacts/skills/codex-artifacts /home/n/.claude/skills/codex-artifacts
-```
-
-Codex ignores Claude-specific frontmatter and may invoke `$codex-artifacts` implicitly or explicitly. Claude respects `disable-model-invocation: true`, so it runs only through `/codex-artifacts`; ordinary artifact requests continue to use Claude's built-in feature.
+The current 512 KiB artifact limit makes this a good fit for self-contained reports and visual documents rather than a general file-hosting service.

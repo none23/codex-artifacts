@@ -1,3 +1,4 @@
 .lakebed/
 .env.lakebed.server
+lakebed.json
 node_modules/
