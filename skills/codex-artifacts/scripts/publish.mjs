@@ -5,21 +5,22 @@ import { readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_URL = "https://codex-artifacts.lakebed.app";
 const OPTION_NAMES = new Set(["--title", "--slug", "--share"]);
 
 function usage() {
   console.error(`Usage:
-  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--no-open]
+  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--public] [--no-open]
 
 Behavior:
   New artifacts are private by default.
   Reusing --slug updates the existing URL.
   Omitting --share during an update preserves the existing allowlist.
+  --public makes the artifact accessible without sign-in.
 
 Environment:
-  ARTIFACTS_URL             Optional deployed app URL override
-  ARTIFACTS_PUBLISH_TOKEN   Optional token override
+  ARTIFACTS_URL             Deployed app URL
+  ARTIFACTS_PUBLISH_TOKEN   Publish token
+  CODEX_ARTIFACTS_ENV       Optional path to an env file containing those values
   ARTIFACTS_AUTO_OPEN=0     Disable opening the published URL`);
 }
 
@@ -53,16 +54,26 @@ function positional(args) {
   return undefined;
 }
 
-async function readRepositoryToken() {
+function parseEnv(source) {
+  const values = {};
+  for (const line of source.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!match) continue;
+    values[match[1]] = match[2].replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return values;
+}
+
+async function readConfiguration() {
   const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-  const repositoryEnv = resolve(scriptDirectory, "../../../.env.lakebed.server");
+  const envPath = process.env.CODEX_ARTIFACTS_ENV
+    ? resolve(process.env.CODEX_ARTIFACTS_ENV)
+    : resolve(scriptDirectory, "../../../.env.lakebed.server");
 
   try {
-    const env = await readFile(repositoryEnv, "utf8");
-    const line = env.split(/\r?\n/).find((value) => value.startsWith("PUBLISH_TOKEN="));
-    return line?.slice("PUBLISH_TOKEN=".length).trim();
+    return parseEnv(await readFile(envPath, "utf8"));
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -93,11 +104,13 @@ function openInBrowser(url) {
 
 const args = process.argv.slice(2);
 const fileArg = positional(args);
-const baseUrl = (process.env.ARTIFACTS_URL ?? DEFAULT_URL).replace(/\/$/, "");
+const configuration = await readConfiguration();
+const baseUrl = (process.env.ARTIFACTS_URL ?? configuration.ARTIFACTS_URL ?? "").replace(/\/$/, "");
 const token =
   process.env.ARTIFACTS_PUBLISH_TOKEN ??
   process.env.PUBLISH_TOKEN ??
-  await readRepositoryToken();
+  configuration.ARTIFACTS_PUBLISH_TOKEN ??
+  configuration.PUBLISH_TOKEN;
 
 if (!fileArg || !baseUrl || !token) {
   usage();
@@ -119,6 +132,9 @@ const payload = { title, slug, html };
 if (shareOptions.length > 0) {
   payload.sharedWith = sharedWith;
 }
+if (args.includes("--public")) {
+  payload.isPublic = true;
+}
 
 const response = await fetch(`${baseUrl}/api/artifacts`, {
   method: "POST",
@@ -132,6 +148,10 @@ const response = await fetch(`${baseUrl}/api/artifacts`, {
 const body = await response.json().catch(() => ({}));
 if (!response.ok) {
   console.error(body.error ?? `Publish failed with HTTP ${response.status}`);
+  process.exit(1);
+}
+if (args.includes("--public") && body.isPublic !== true) {
+  console.error("Publish succeeded, but the server did not confirm public access.");
   process.exit(1);
 }
 
