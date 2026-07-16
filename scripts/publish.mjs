@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 
-import "../skills/create-artifact/scripts/publish.mjs";
+import "../skills/codex-artifacts/scripts/publish.mjs";

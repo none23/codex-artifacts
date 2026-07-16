@@ -74,22 +74,13 @@ Production: <https://codex-artifacts.lakebed.app>
 
 Open an artifact and use the **Access** control in its viewer bar to manage people, domains, and public visibility. Domain rules match the verified Google email suffix exactly; for example, `dataart.com` grants access to every signed-in `@dataart.com` address. Public artifacts require no sign-in.
 
-## Global Codex skill
+## Codex and Claude skill
 
-The reusable skill lives at `skills/create-artifact`. Link it into the user-level Codex skill directory so every new session can discover it:
-
-```sh
-ln -s /home/n/misc/artifacts/skills/create-artifact /home/n/.codex/skills/create-artifact
-```
-
-Then ask Codex to “create an artifact,” “publish this as a visual report,” or invoke `$create-artifact` explicitly. The skill creates a self-contained HTML page, publishes it privately, and returns the URL. Reusing an existing artifact slug updates the same URL.
-
-## Claude Code skill
-
-The Claude-specific wrapper lives at `integrations/claude/skills/codex-artifacts`. Install it for the current user:
+The shared skill lives at `skills/codex-artifacts`. Link the same directory into both user-level skill locations:
 
 ```sh
-ln -s /home/n/misc/artifacts/integrations/claude/skills/codex-artifacts /home/n/.claude/skills/codex-artifacts
+ln -s /home/n/misc/artifacts/skills/codex-artifacts /home/n/.codex/skills/codex-artifacts
+ln -s /home/n/misc/artifacts/skills/codex-artifacts /home/n/.claude/skills/codex-artifacts
 ```
 
-Invoke it explicitly with `/codex-artifacts`. It sets `disable-model-invocation: true`, so ordinary artifact requests continue to use Claude Code's built-in feature while this command publishes through Lakebed.
+Codex ignores Claude-specific frontmatter and may invoke `$codex-artifacts` implicitly or explicitly. Claude respects `disable-model-invocation: true`, so it runs only through `/codex-artifacts`; ordinary artifact requests continue to use Claude's built-in feature.

@@ -1,9 +1,13 @@
 ---
-name: create-artifact
+name: codex-artifacts
 description: Create and privately publish self-contained HTML artifacts. Use for requested artifacts, shareable visual pages or links, HTML reports, dashboards, explainers, PR walkthroughs, plans, comparisons, timelines, checklists, status pages, or updates to existing artifacts.
+disable-model-invocation: true
+argument-hint: "[request or HTML file]"
 ---
 
-# Create Artifact
+# Codex Artifacts
+
+When invoked in Claude Code, do not use its built-in Artifact tool.
 
 ## Build
 
@@ -25,7 +29,7 @@ description: Create and privately publish self-contained HTML artifacts. Use for
 ## Publish
 
 ```sh
-node "${CODEX_HOME:-$HOME/.codex}/skills/create-artifact/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--no-open]
+node "/home/n/misc/artifacts/skills/codex-artifacts/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--no-open]
 ```
 
 - Omit `--slug` to create; reuse a slug to update.
