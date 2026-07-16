@@ -25,10 +25,11 @@ description: Create and privately publish self-contained HTML artifacts. Use for
 ## Publish
 
 ```sh
-node "${CODEX_HOME:-$HOME/.codex}/skills/create-artifact/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>]
+node "${CODEX_HOME:-$HOME/.codex}/skills/create-artifact/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--no-open]
 ```
 
 - Omit `--slug` to create; reuse a slug to update.
 - Omit `--share` for owner-only creation or to preserve recipients when updating. If supplied, it replaces the allowlist; include only user-named emails.
+- The publisher opens the URL after success; use `--no-open` for headless runs.
 
 Return the URL first, access, source path, and created/updated status.

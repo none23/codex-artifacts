@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,7 @@ const OPTION_NAMES = new Set(["--title", "--slug", "--share"]);
 
 function usage() {
   console.error(`Usage:
-  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com]
+  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--no-open]
 
 Behavior:
   New artifacts are private by default.
@@ -18,7 +19,8 @@ Behavior:
 
 Environment:
   ARTIFACTS_URL             Optional deployed app URL override
-  ARTIFACTS_PUBLISH_TOKEN   Optional token override`);
+  ARTIFACTS_PUBLISH_TOKEN   Optional token override
+  ARTIFACTS_AUTO_OPEN=0     Disable opening the published URL`);
 }
 
 function option(args, name) {
@@ -61,6 +63,31 @@ async function readRepositoryToken() {
     return line?.slice("PUBLISH_TOKEN=".length).trim();
   } catch {
     return undefined;
+  }
+}
+
+function openInBrowser(url) {
+  if (args.includes("--no-open") || process.env.ARTIFACTS_AUTO_OPEN === "0") {
+    return;
+  }
+
+  const command =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32" ? "cmd" :
+    "xdg-open";
+  const commandArgs =
+    process.platform === "win32" ? ["/c", "start", "", url] : [url];
+
+  try {
+    const child = spawn(command, commandArgs, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true
+    });
+    child.on("error", () => undefined);
+    child.unref();
+  } catch {
+    // Publishing succeeded; unavailable desktop integration is non-fatal.
   }
 }
 
@@ -108,4 +135,6 @@ if (!response.ok) {
   process.exit(1);
 }
 
-console.log(`${baseUrl}/a/${body.slug}`);
+const artifactUrl = `${baseUrl}/a/${body.slug}`;
+console.log(artifactUrl);
+openInBrowser(artifactUrl);

@@ -65,6 +65,8 @@ node scripts/publish.mjs ./report.html \
 
 When run from this repository, the script uses the production URL and reads `PUBLISH_TOKEN` from the ignored `.env.lakebed.server` automatically. `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` remain available as overrides. The command prints the private artifact URL. Recipients must open that URL and sign in with the exact Google email supplied in `--share`.
 
+Successful publishes open automatically in the default browser. Pass `--no-open` or set `ARTIFACTS_AUTO_OPEN=0` to disable this.
+
 Do not commit `.env.lakebed.server` or place the publish token in an artifact.
 
 Production: <https://codex-artifacts.lakebed.app>
