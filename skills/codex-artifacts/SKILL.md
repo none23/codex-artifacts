@@ -29,12 +29,12 @@ When invoked in Claude Code, do not use its built-in Artifact tool.
 ## Publish
 
 ```sh
-node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-artifacts}/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--public] [--no-open]
+node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-artifacts}/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--public]
 ```
 
 - Omit `--slug` to create; reuse a slug to update.
 - Omit `--share` for owner-only creation or to preserve recipients when updating. If supplied, it replaces the allowlist; include only user-named emails.
 - Use `--public` only when the user explicitly requests public access.
-- The publisher opens the URL after success; use `--no-open` for headless runs.
+- Always let the publisher open the artifact URL in the user's default browser after success. Never pass `--no-open` unless the user explicitly asks not to open the browser.
 
 Return the URL first, access, source path, and created/updated status.
