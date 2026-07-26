@@ -173,7 +173,7 @@ Artifact HTML is untrusted. It runs in an iframe sandbox without `allow-same-ori
 
 The publishing token is deployment-wide owner automation authority. Anyone holding it can create artifacts and replace an artifact whose slug they know. Keep it only on trusted owner machines; do not distribute it as a consumer credential.
 
-Lakebed currently limits capsule state to 1 MiB. This project limits one artifact to 512 KiB and individual chunks to 48 KiB, but metadata, access grants, and indexes also consume state. Treat the deployment as a small visual-document workspace, not general hosting. Delete superseded artifacts and monitor usage with Lakebed inspection tools.
+Lakebed currently limits capsule state to 1 MiB. This project limits one artifact to 512 KiB, individual chunks to 48 KiB, and total artifact HTML to 768 KiB, reserving the remaining state for metadata, access grants, and indexes. Treat the deployment as a small visual-document workspace, not general hosting. Delete superseded artifacts and monitor usage with Lakebed inspection tools.
 
 Public artifacts are subject to the [Lakebed Acceptable Use Policy](https://lakebed.dev/acceptable-use). The deployment owner is responsible for its published content and recipients.
 

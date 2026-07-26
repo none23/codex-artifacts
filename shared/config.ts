@@ -1,5 +1,6 @@
 export const MAX_ARTIFACT_BYTES = 512 * 1024;
 export const MAX_CHUNK_BYTES = 48 * 1024;
+export const MAX_TOTAL_ARTIFACT_BYTES = 768 * 1024;
 export const MAX_SHARED_EMAILS = 50;
 export const MAX_SHARED_DOMAINS = 20;
 

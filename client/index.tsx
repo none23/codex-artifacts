@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type app from "../server";
 import {
   MAX_ARTIFACT_BYTES,
+  MAX_TOTAL_ARTIFACT_BYTES,
   chunkHtml,
   cleanSlug,
   isValidDomain,
@@ -153,7 +154,7 @@ function NewArtifactForm() {
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-cyan-300">New artifact</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Publish an HTML file</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Only you can see it until you add verified Google emails. Maximum {formatBytes(MAX_ARTIFACT_BYTES)}.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Only you can see it until you add recipients. Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
         </div>
         <form className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" onSubmit={(event) => void submit(event)}>
           <label className="grid gap-1.5 text-xs font-medium text-slate-400">
@@ -248,6 +249,10 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
 
 function OwnerDashboard() {
   const artifacts = client.useQuery("ownedArtifacts");
+  const usedBytes = artifacts?.reduce(
+    (total, artifact) => total + Number(artifact.sizeBytes),
+    0
+  ) ?? 0;
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <NewArtifactForm />
@@ -257,7 +262,9 @@ function OwnerDashboard() {
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-slate-500">Library</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">Published artifacts</h1>
           </div>
-          <span className="text-sm text-slate-500">{artifacts?.length ?? 0} total</span>
+          <span className="text-sm text-slate-500">
+            {artifacts?.length ?? 0} total · {formatBytes(usedBytes)} of {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)}
+          </span>
         </div>
         {!artifacts ? (
           <div className="rounded-2xl border border-white/10 p-8 text-center text-slate-500">Loading artifacts…</div>
