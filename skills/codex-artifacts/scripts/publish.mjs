@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseArguments,
+  parseEnv,
+  resolvePublishingProfile
+} from "./publisher-core.mjs";
 
-const OPTION_NAMES = new Set(["--title", "--slug", "--share"]);
+const MAX_ARTIFACT_BYTES = 512 * 1024;
+const PUBLISH_TIMEOUT_MS = 30_000;
 
 function usage() {
   console.error(`Usage:
@@ -24,46 +30,6 @@ Environment:
   ARTIFACTS_AUTO_OPEN=0     Disable opening the published URL`);
 }
 
-function option(args, name) {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
-}
-
-function optionValues(args, name) {
-  const values = [];
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === name && args[index + 1]) {
-      values.push(args[index + 1]);
-      index += 1;
-    }
-  }
-  return values;
-}
-
-function positional(args) {
-  for (let index = 0; index < args.length; index += 1) {
-    const value = args[index];
-    if (OPTION_NAMES.has(value)) {
-      index += 1;
-      continue;
-    }
-    if (!value.startsWith("--")) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function parseEnv(source) {
-  const values = {};
-  for (const line of source.split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (!match) continue;
-    values[match[1]] = match[2].replace(/^(['"])(.*)\1$/, "$2");
-  }
-  return values;
-}
-
 async function readConfiguration() {
   const scriptDirectory = dirname(fileURLToPath(import.meta.url));
   const envPath = process.env.CODEX_ARTIFACTS_ENV
@@ -71,14 +37,17 @@ async function readConfiguration() {
     : resolve(scriptDirectory, "../../../.env.lakebed.server");
 
   try {
-    return parseEnv(await readFile(envPath, "utf8"));
-  } catch {
-    return {};
+    return { path: envPath, values: parseEnv(await readFile(envPath, "utf8")) };
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return { path: envPath, values: {} };
+    }
+    throw error;
   }
 }
 
-function openInBrowser(url) {
-  if (args.includes("--no-open") || process.env.ARTIFACTS_AUTO_OPEN === "0") {
+function openInBrowser(url, noOpen) {
+  if (noOpen || process.env.ARTIFACTS_AUTO_OPEN === "0") {
     return;
   }
 
@@ -102,59 +71,83 @@ function openInBrowser(url) {
   }
 }
 
-const args = process.argv.slice(2);
-const fileArg = positional(args);
-const configuration = await readConfiguration();
-const baseUrl = (process.env.ARTIFACTS_URL ?? configuration.ARTIFACTS_URL ?? "").replace(/\/$/, "");
-const token =
-  process.env.ARTIFACTS_PUBLISH_TOKEN ??
-  process.env.PUBLISH_TOKEN ??
-  configuration.ARTIFACTS_PUBLISH_TOKEN ??
-  configuration.PUBLISH_TOKEN;
+async function main() {
+  const args = parseArguments(process.argv.slice(2));
+  if (args.help) {
+    usage();
+    return;
+  }
+  if (!args.file) {
+    throw new Error("An HTML file is required. Use --help for usage.");
+  }
 
-if (!fileArg || !baseUrl || !token) {
-  usage();
-  process.exit(1);
+  const configuration = await readConfiguration();
+  const { baseUrl, token } = resolvePublishingProfile(process.env, configuration.values);
+  const filePath = resolve(args.file);
+  const fileInfo = await stat(filePath);
+  if (!fileInfo.isFile()) {
+    throw new Error(`${filePath} is not a regular file.`);
+  }
+  if (fileInfo.size > MAX_ARTIFACT_BYTES) {
+    throw new Error("Artifact exceeds the 512 KiB limit.");
+  }
+
+  const html = await readFile(filePath, "utf8");
+  if (Buffer.byteLength(html, "utf8") > MAX_ARTIFACT_BYTES) {
+    throw new Error("Artifact exceeds the 512 KiB limit.");
+  }
+  const fileName = basename(filePath).replace(/\.html?$/i, "");
+  const payload = {
+    title: args.title ?? fileName,
+    slug: args.slug,
+    html
+  };
+  if (args.sharedWith.length > 0) {
+    payload.sharedWith = args.sharedWith;
+  }
+  if (args.isPublic) {
+    payload.isPublic = true;
+  }
+
+  const response = await fetch(`${baseUrl}/api/artifacts`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS)
+  });
+
+  const responseText = await response.text();
+  let body = {};
+  try {
+    body = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    if (!response.ok) {
+      throw new Error(`Publish failed with HTTP ${response.status}.`);
+    }
+    throw new Error("Publish succeeded but returned an invalid JSON response.");
+  }
+  if (!response.ok) {
+    throw new Error(
+      typeof body.error === "string" ? body.error : `Publish failed with HTTP ${response.status}.`
+    );
+  }
+  if (typeof body.slug !== "string" || !body.slug) {
+    throw new Error("Publish succeeded but returned no artifact slug.");
+  }
+  if (args.isPublic && body.isPublic !== true) {
+    throw new Error("Publish succeeded, but the server did not confirm public access.");
+  }
+
+  const artifactUrl = `${baseUrl}/a/${body.slug}`;
+  console.log(artifactUrl);
+  openInBrowser(artifactUrl, args.noOpen);
 }
 
-const filePath = resolve(fileArg);
-const html = await readFile(filePath, "utf8");
-const fileName = basename(filePath).replace(/\.html?$/i, "");
-const title = option(args, "--title") ?? fileName;
-const slug = option(args, "--slug");
-const shareOptions = optionValues(args, "--share");
-const sharedWith = shareOptions
-  .flatMap((value) => value.split(","))
-  .map((value) => value.trim())
-  .filter(Boolean);
-
-const payload = { title, slug, html };
-if (shareOptions.length > 0) {
-  payload.sharedWith = sharedWith;
-}
-if (args.includes("--public")) {
-  payload.isPublic = true;
-}
-
-const response = await fetch(`${baseUrl}/api/artifacts`, {
-  method: "POST",
-  headers: {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json"
-  },
-  body: JSON.stringify(payload)
+main().catch((error) => {
+  const message = error instanceof Error ? error.message : "Unable to publish artifact.";
+  console.error(message);
+  process.exitCode = 1;
 });
-
-const body = await response.json().catch(() => ({}));
-if (!response.ok) {
-  console.error(body.error ?? `Publish failed with HTTP ${response.status}`);
-  process.exit(1);
-}
-if (args.includes("--public") && body.isPublic !== true) {
-  console.error("Publish succeeded, but the server did not confirm public access.");
-  process.exit(1);
-}
-
-const artifactUrl = `${baseUrl}/a/${body.slug}`;
-console.log(artifactUrl);
-openInBrowser(artifactUrl);
