@@ -1,0 +1,130 @@
+openapi: 3.1.0
+info:
+  title: Codex Artifacts publishing API
+  version: 0.1.0
+  description: Owner automation API for one self-hosted Codex Artifacts deployment.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://your-artifacts.lakebed.app
+paths:
+  /api/status:
+    get:
+      operationId: getStatus
+      summary: Check service liveness
+      responses:
+        "200":
+          description: Service process is responding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /api/artifacts:
+    post:
+      operationId: publishArtifact
+      summary: Create an artifact or replace the artifact with a requested slug
+      description: |
+        The bearer token is deployment-wide owner automation authority. If `slug`
+        identifies an existing artifact, its HTML and title are replaced. Omitted
+        `sharedWith` and `isPublic` values preserve existing settings during updates.
+      security:
+        - publishToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "200":
+          description: Existing artifact updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishResponse"
+        "201":
+          description: Artifact created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishResponse"
+        "400":
+          description: Invalid artifact input or exhausted state capacity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid publishing token.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          description: Publishing automation is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    publishToken:
+      type: http
+      scheme: bearer
+  schemas:
+    Status:
+      type: object
+      additionalProperties: false
+      required: [ok, service]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        service:
+          type: string
+          const: codex-artifacts
+    PublishRequest:
+      type: object
+      additionalProperties: false
+      required: [title, html]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          description: Optional stable slug. Non-alphanumeric runs normalize to hyphens.
+          maxLength: 80
+        html:
+          type: string
+          description: Self-contained UTF-8 HTML, limited to 512 KiB by the server.
+        sharedWith:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: email
+        isPublic:
+          type: boolean
+    PublishResponse:
+      type: object
+      additionalProperties: false
+      required: [id, slug, updated, isPublic]
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        updated:
+          type: boolean
+        isPublic:
+          type: boolean
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
