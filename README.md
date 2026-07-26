@@ -1,25 +1,20 @@
 # Codex Artifacts
 
-Codex Artifacts turns self-contained HTML files into private, shareable web pages. It is designed for reports, dashboards, plans, walkthroughs, and other visual documents created by coding agents.
+Codex Artifacts is a small service for publishing self-contained HTML files as private, shareable web pages. It gives coding agents a place to publish reports, dashboards, plans, walkthroughs, and other visual documents, while you control who can view them.
 
-Each operator deploys the service into their own Lakebed account. There is no shared hosted publishing service and no shared credential: your deployment owns its data, owner invitations, URL, and publishing token.
+You run Codex Artifacts in your own Lakebed account. Your deployment has its own data, owners, URL, and publishing token; there is no shared hosted service or credential.
 
-[View the public README demo](https://codex-artifacts.lakebed.app/a/readme-demo)
+## Set up your own service
 
-## What you get
+You need:
 
-- Google sign-in with durable Lakebed identity bindings
-- Private-by-default artifact publishing
-- Per-artifact invitations by exact email or email domain
-- Optional public links
-- A browser UI for uploading, replacing, downloading, and deleting artifacts
-- A shared Codex and Claude Code skill for agent-driven publishing
-- A command-line publisher that can update an existing artifact URL
-- Sandboxed HTML previews without `allow-same-origin`
+- Node.js 20 or later
+- A Google account
+- A free [Lakebed](https://lakebed.dev) account
 
-## Quick start
+### 1. Clone, install, and deploy
 
-You need Node.js 20 or later, a Google account, and a free [Lakebed](https://lakebed.dev) account.
+Replace `you@example.com` with the Google email you will use to administer the service:
 
 ```sh
 git clone https://github.com/none23/codex-artifacts.git
@@ -28,19 +23,15 @@ npm ci
 npm run setup -- --owner you@example.com
 ```
 
-Setup:
+Follow the Lakebed sign-in prompt if one appears. The command creates your deployment, checks that it is healthy, and prints its service URL.
 
-1. Creates a random 256-bit publishing token.
-2. Writes the ignored `.env.lakebed.server` with mode `0600`.
-3. Opens Lakebed developer login if needed.
-4. Creates an owned deployment or updates the deployment already bound in `lakebed.json`.
-5. Saves the deployment URL and verifies `/api/status`.
+### 2. Sign in as the owner
 
-Re-run `npm run setup` after pulling an update. Existing owners, secrets, and a configured custom URL are preserved unless you explicitly replace the owner list with `--owner`.
+Open the printed service URL and choose **Sign in with Google**. Use the same email you passed to `--owner`. This first sign-in accepts the owner invitation and gives you access to the management interface.
 
-### Install the agent skill
+### 3. Install the agent skill
 
-Link the same skill directory for Codex, Claude Code, or both:
+Link the included skill for Codex, Claude Code, or both:
 
 ```sh
 REPO_DIR="$(pwd)"
@@ -54,21 +45,40 @@ ln -sfn "$REPO_DIR/skills/codex-artifacts" \
   "$HOME/.claude/skills/codex-artifacts"
 ```
 
-If the skill is copied away from this repository, set `CODEX_ARTIFACTS_ENV` to the absolute path of `.env.lakebed.server`.
+Start a new agent session after installing the skill so it is discovered.
 
-### Publish
+### 4. Publish your first artifact
 
-Ask your agent:
+From any project, ask your agent:
 
 ```text
 Use codex-artifacts to create and publish a visual architecture report for this repository.
 ```
 
-Or publish an existing file:
+The agent creates the HTML, publishes it to your deployment, and opens the private result in your browser. New artifacts are visible only to configured owners until you explicitly share them.
+
+You can also publish an existing HTML file directly from the Codex Artifacts repository:
 
 ```sh
 node scripts/publish.mjs ./report.html --title "Architecture report"
 ```
+
+Your service is now ready to use. See the [public README demo](https://codex-artifacts.lakebed.app/a/readme-demo) for a view-only example of a published artifact.
+
+## Using Codex Artifacts
+
+The service provides:
+
+- Google sign-in with durable Lakebed identity bindings
+- Private-by-default artifact publishing
+- Per-artifact invitations by exact email or email domain
+- Optional public links
+- A browser UI for uploading, replacing, downloading, and deleting artifacts
+- A shared Codex and Claude Code skill for agent-driven publishing
+- A command-line publisher that can update an existing artifact URL
+- Sandboxed HTML previews without `allow-same-origin`
+
+### Publishing options
 
 Useful options:
 
@@ -81,6 +91,20 @@ Useful options:
 ```
 
 Omitting `--share` or `--public` while updating preserves existing access. The publisher refuses to combine a process-level URL override with a token loaded from the configuration file; override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
+
+If the skill is copied away from this repository instead of linked, set `CODEX_ARTIFACTS_ENV` to the absolute path of `.env.lakebed.server`.
+
+## What setup configures
+
+The setup command:
+
+1. Creates a random 256-bit publishing token.
+2. Writes the ignored `.env.lakebed.server` with mode `0600`.
+3. Opens Lakebed developer login if needed.
+4. Creates an owned deployment or updates the deployment already bound in `lakebed.json`.
+5. Saves the deployment URL and verifies `/api/status`.
+
+Re-run `npm run setup` after pulling an update. Existing owners, secrets, and a configured custom URL are preserved unless you explicitly replace the owner list with `--owner`.
 
 ## Identity and access
 
