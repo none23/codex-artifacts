@@ -10,7 +10,7 @@ import {
   useLocation,
   useParams
 } from "lakebed/client";
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type app from "../server";
 import {
   MAX_ARTIFACT_BYTES,
@@ -284,6 +284,36 @@ function NonOwnerHome() {
   );
 }
 
+function useOwnerBootstrap() {
+  const viewer = client.useQuery("viewer");
+  const claimOwnerAccess = client.useMutation("claimOwnerAccess");
+  const [state, setState] = useState<"idle" | "claiming" | "claimed" | "error">("idle");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!viewer || viewer.isOwner || !viewer.canClaimOwner || state !== "idle") {
+      return;
+    }
+
+    setState("claiming");
+    void claimOwnerAccess()
+      .then((result) => {
+        if (!result.claimed) {
+          setError("This Google identity could not accept the configured owner invitation.");
+          setState("error");
+          return;
+        }
+        setState("claimed");
+      })
+      .catch((caught) => {
+        setError(messageFromError(caught));
+        setState("error");
+      });
+  }, [viewer?.isOwner, viewer?.canClaimOwner, state]);
+
+  return { viewer, state, error };
+}
+
 type ViewedArtifact = Exclude<ReturnType<typeof client.useQuery<"artifactBySlug">>, null | undefined>;
 
 function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
@@ -439,11 +469,38 @@ function ArtifactFrame() {
   const auth = useAuth();
   const { slug = "" } = useParams<{ slug: string }>();
   const artifact = client.useQuery("artifactBySlug", slug);
+  const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
+  const ownerBootstrap = useOwnerBootstrap();
+  const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "denied">("idle");
   const [copied, setCopied] = useState(false);
   const downloadUrl = useMemo(() => {
     if (!artifact) return "";
     return URL.createObjectURL(new Blob([artifact.html], { type: "text/html;charset=utf-8" }));
   }, [artifact?.html]);
+
+  useEffect(() => {
+    if (
+      artifact !== null ||
+      auth.isLoading ||
+      auth.isGuest ||
+      accessState !== "idle" ||
+      ownerBootstrap.state === "claiming"
+    ) {
+      return;
+    }
+
+    setAccessState("accepting");
+    void acceptArtifactAccess(slug)
+      .then((result) => setAccessState(result.accepted ? "accepted" : "denied"))
+      .catch(() => setAccessState("denied"));
+  }, [
+    artifact,
+    auth.isLoading,
+    auth.isGuest,
+    slug,
+    accessState,
+    ownerBootstrap.state
+  ]);
 
   if (artifact === undefined) {
     return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
@@ -451,6 +508,14 @@ function ArtifactFrame() {
   if (artifact === null) {
     if (auth.isGuest) {
       return <SignInCard shared />;
+    }
+    if (
+      accessState === "accepting" ||
+      accessState === "accepted" ||
+      ownerBootstrap.state === "claiming" ||
+      ownerBootstrap.state === "claimed"
+    ) {
+      return <main className="grid min-h-screen place-items-center text-slate-500">Verifying shared access…</main>;
     }
     return (
       <main className="mx-auto grid min-h-screen max-w-xl place-content-center px-6 py-24 text-center">
@@ -507,11 +572,25 @@ function RootPage() {
 }
 
 function SignedInRoot() {
-  const viewer = client.useQuery("viewer");
+  const { viewer, state, error } = useOwnerBootstrap();
   if (!viewer) {
     return <main className="grid min-h-[70vh] place-items-center text-slate-500">Loading workspace…</main>;
   }
-  return viewer.isOwner ? <OwnerDashboard /> : <NonOwnerHome />;
+  if (viewer.isOwner) {
+    return <OwnerDashboard />;
+  }
+  if (state === "claiming" || state === "claimed") {
+    return <main className="grid min-h-[70vh] place-items-center text-slate-500">Activating owner access…</main>;
+  }
+  if (state === "error") {
+    return (
+      <main className="mx-auto grid min-h-[70vh] max-w-xl place-content-center px-6 text-center">
+        <h1 className="text-2xl font-semibold text-white">Owner access could not be activated.</h1>
+        <p className="mt-3 text-slate-400">{error}</p>
+      </main>
+    );
+  }
+  return <NonOwnerHome />;
 }
 
 function ArtifactPage() {

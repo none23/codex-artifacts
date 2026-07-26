@@ -9,6 +9,7 @@ import {
   string,
   table,
   text,
+  type QueryServerContext,
   type ServerContext,
   type WriteDatabaseForSchema
 } from "lakebed/server";
@@ -47,11 +48,36 @@ const schema = {
     artifactId: id("artifacts"),
     part: string(),
     content: string()
-  }).index("by_artifact_part", ["artifactId", "part"])
+  }).index("by_artifact_part", ["artifactId", "part"]),
+  ownerBindings: table({
+    userId: string(),
+    invitedEmail: string()
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_invited_email", ["invitedEmail"]),
+  artifactGrants: table({
+    artifactId: id("artifacts"),
+    userId: string(),
+    ruleType: string(),
+    ruleValue: string()
+  })
+    .index("by_artifact_user", ["artifactId", "userId"])
+    .index("by_artifact", ["artifactId"])
 };
 
 type AppContext = ServerContext<WriteDatabaseForSchema<typeof schema>>;
 type EnvironmentContext = { env: ServerContext["env"] };
+type AuthEnvironmentContext = Pick<QueryServerContext, "auth" | "env">;
+type OwnerReadContext = AuthEnvironmentContext & {
+  db: {
+    ownerBindings: Pick<AppContext["db"]["ownerBindings"], "withIndex">;
+  };
+};
+type GrantReadContext = {
+  db: {
+    artifactGrants: Pick<AppContext["db"]["artifactGrants"], "withIndex">;
+  };
+};
 
 type PublishInput = {
   artifactId?: string;
@@ -82,7 +108,9 @@ function isConfiguredOwner(ctx: EnvironmentContext, value: string): boolean {
   return ownerEmails(ctx).includes(normalizeEmail(value));
 }
 
-function authenticatedEmail(ctx: { auth: ServerContext["auth"] }): string | null {
+function authenticatedIdentity(
+  ctx: { auth: ServerContext["auth"] }
+): { userId: string; email: string } | null {
   if (
     !ctx.auth.isAuthenticated ||
     ctx.auth.provider !== "google" ||
@@ -91,13 +119,99 @@ function authenticatedEmail(ctx: { auth: ServerContext["auth"] }): string | null
   ) {
     return null;
   }
-  return normalizeEmail(ctx.auth.email);
+  return {
+    userId: ctx.auth.userId,
+    email: normalizeEmail(ctx.auth.email)
+  };
 }
 
-function requireOwner(ctx: { auth: ServerContext["auth"]; env: ServerContext["env"] }): void {
-  const email = authenticatedEmail(ctx);
-  if (!email || !isConfiguredOwner(ctx, email)) {
+async function ownerBinding(ctx: OwnerReadContext, userId: string) {
+  return ctx.db.ownerBindings
+    .withIndex("by_user_id", (q) => q.eq("userId", userId))
+    .first();
+}
+
+async function hasOwnerAccess(ctx: OwnerReadContext): Promise<boolean> {
+  const identity = authenticatedIdentity(ctx);
+  if (!identity) {
+    return false;
+  }
+  const binding = await ownerBinding(ctx, identity.userId);
+  return Boolean(binding && ownerEmails(ctx).includes(binding.invitedEmail));
+}
+
+async function requireOwner(ctx: OwnerReadContext): Promise<void> {
+  if (!(await hasOwnerAccess(ctx))) {
     throw new Error("Only the artifact owner can perform this action.");
+  }
+}
+
+async function claimConfiguredOwner(ctx: AppContext): Promise<boolean> {
+  const identity = authenticatedIdentity(ctx);
+  if (!identity || !isConfiguredOwner(ctx, identity.email)) {
+    return false;
+  }
+
+  const existingForUser = await ownerBinding(ctx, identity.userId);
+  if (existingForUser?.invitedEmail === identity.email) {
+    return true;
+  }
+
+  const existingForInvitation = await ctx.db.ownerBindings
+    .withIndex("by_invited_email", (q) => q.eq("invitedEmail", identity.email))
+    .first();
+  if (existingForInvitation && existingForInvitation.userId !== identity.userId) {
+    throw new Error("This owner invitation has already been accepted by another identity.");
+  }
+
+  if (existingForUser) {
+    await ctx.db.ownerBindings.update(existingForUser.id, {
+      invitedEmail: identity.email
+    });
+  } else if (!existingForInvitation) {
+    await ctx.db.ownerBindings.insert({
+      userId: identity.userId,
+      invitedEmail: identity.email
+    });
+  }
+  return true;
+}
+
+async function validArtifactGrant(
+  ctx: GrantReadContext,
+  artifactId: string,
+  userId: string,
+  sharedWith: string[],
+  sharedDomains: string[]
+): Promise<boolean> {
+  const grants = await ctx.db.artifactGrants
+    .withIndex("by_artifact_user", (q) =>
+      q.eq("artifactId", artifactId).eq("userId", userId)
+    )
+    .collect();
+  return grants.some((grant) =>
+    grant.ruleType === "email"
+      ? sharedWith.includes(grant.ruleValue)
+      : grant.ruleType === "domain" && sharedDomains.includes(grant.ruleValue)
+  );
+}
+
+async function pruneArtifactGrants(
+  ctx: AppContext,
+  artifactId: string,
+  sharedWith: string[],
+  sharedDomains: string[]
+) {
+  const grants = await ctx.db.artifactGrants
+    .withIndex("by_artifact", (q) => q.eq("artifactId", artifactId))
+    .collect();
+  for (const grant of grants) {
+    const isValid =
+      (grant.ruleType === "email" && sharedWith.includes(grant.ruleValue)) ||
+      (grant.ruleType === "domain" && sharedDomains.includes(grant.ruleValue));
+    if (!isValid) {
+      await ctx.db.artifactGrants.delete(grant.id);
+    }
   }
 }
 
@@ -191,6 +305,12 @@ async function publishAsOwner(
       sizeBytes: String(validated.sizeBytes),
       chunkCount: String(input.chunks.length)
     });
+    await pruneArtifactGrants(
+      ctx,
+      artifact.id,
+      validated.sharedWith,
+      parseSharedEmails(artifact.sharedDomains)
+    );
     return { id: artifact.id, slug: validated.slug };
   }
 
@@ -222,29 +342,23 @@ export default capsule({
   schema,
 
   queries: {
-    viewer: query((ctx) => {
-      const email = authenticatedEmail(ctx);
-      return { isOwner: Boolean(email && isConfiguredOwner(ctx, email)) };
+    viewer: query(async (ctx) => {
+      const identity = authenticatedIdentity(ctx);
+      return {
+        isOwner: await hasOwnerAccess(ctx),
+        canClaimOwner: Boolean(identity && isConfiguredOwner(ctx, identity.email))
+      };
     }),
 
     ownedArtifacts: query(async (ctx) => {
-      const email = authenticatedEmail(ctx);
-      if (!email || !isConfiguredOwner(ctx, email)) {
+      if (!(await hasOwnerAccess(ctx))) {
         return [];
       }
 
-      const artifactGroups = [];
-      for (const ownerEmail of ownerEmails(ctx)) {
-        artifactGroups.push(
-          await ctx.db.artifacts
-            .withIndex("by_owner_email", (q) => q.eq("ownerEmail", ownerEmail))
-            .order("desc")
-            .collect()
-        );
-      }
-      const artifacts = artifactGroups
-        .flat()
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      const artifacts = await ctx.db.artifacts
+        .withIndex("by_creation")
+        .order("desc")
+        .collect();
 
       return artifacts.map((artifact) => ({
         ...artifact,
@@ -266,16 +380,22 @@ export default capsule({
       const sharedWith = parseSharedEmails(artifact.sharedWith);
       const sharedDomains = parseSharedEmails(artifact.sharedDomains);
       const isPublic = artifact.isPublic === true;
-      const email = authenticatedEmail(ctx);
+      const identity = authenticatedIdentity(ctx);
       const configuredOwners = ownerEmails(ctx);
-      const canManage = Boolean(email && configuredOwners.includes(email));
+      const canManage = await hasOwnerAccess(ctx);
+      const hasGrant = identity
+        ? await validArtifactGrant(
+            ctx,
+            artifact.id,
+            identity.userId,
+            sharedWith,
+            sharedDomains
+          )
+        : false;
       const canView =
         isPublic ||
         canManage ||
-        Boolean(email && (
-          sharedWith.includes(email) ||
-          sharedDomains.includes(emailDomain(email))
-        ));
+        hasGrant;
       if (!canView) {
         return null;
       }
@@ -302,8 +422,63 @@ export default capsule({
   },
 
   mutations: {
+    claimOwnerAccess: mutation(async (ctx) => ({
+      claimed: await claimConfiguredOwner(ctx)
+    })),
+
+    acceptArtifactAccess: mutation(async (ctx, slugInput: string) => {
+      const identity = authenticatedIdentity(ctx);
+      if (!identity) {
+        return { accepted: false };
+      }
+      if (await claimConfiguredOwner(ctx)) {
+        return { accepted: true };
+      }
+
+      const slug = cleanSlug(slugInput);
+      const artifact = await ctx.db.artifacts
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      if (!artifact) {
+        return { accepted: false };
+      }
+      if (artifact.isPublic === true) {
+        return { accepted: true };
+      }
+
+      const sharedWith = parseSharedEmails(artifact.sharedWith);
+      const sharedDomains = parseSharedEmails(artifact.sharedDomains);
+      const domain = emailDomain(identity.email);
+      const ruleType = sharedWith.includes(identity.email)
+        ? "email"
+        : sharedDomains.includes(domain)
+          ? "domain"
+          : null;
+      const ruleValue = ruleType === "email" ? identity.email : domain;
+      if (!ruleType) {
+        return { accepted: false };
+      }
+
+      const grants = await ctx.db.artifactGrants
+        .withIndex("by_artifact_user", (q) =>
+          q.eq("artifactId", artifact.id).eq("userId", identity.userId)
+        )
+        .collect();
+      if (!grants.some((grant) =>
+        grant.ruleType === ruleType && grant.ruleValue === ruleValue
+      )) {
+        await ctx.db.artifactGrants.insert({
+          artifactId: artifact.id,
+          userId: identity.userId,
+          ruleType,
+          ruleValue
+        });
+      }
+      return { accepted: true };
+    }),
+
     publishArtifact: mutation(async (ctx, input: PublishInput) => {
-      requireOwner(ctx);
+      await requireOwner(ctx);
       return publishAsOwner(ctx, input, ctx.auth.userId);
     }),
 
@@ -312,7 +487,7 @@ export default capsule({
       artifactId: string,
       access: { emails: string[]; domains: string[]; isPublic: boolean }
     ) => {
-      requireOwner(ctx);
+      await requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
       if (!artifact) {
         throw new Error("Artifact not found.");
@@ -331,11 +506,12 @@ export default capsule({
         sharedDomains: JSON.stringify(sharedDomains),
         isPublic: access.isPublic === true
       });
+      await pruneArtifactGrants(ctx, artifact.id, sharedWith, sharedDomains);
       return { emails: sharedWith, domains: sharedDomains, isPublic: access.isPublic === true };
     }),
 
     deleteArtifact: mutation(async (ctx, artifactId: string) => {
-      requireOwner(ctx);
+      await requireOwner(ctx);
       const artifact = await ctx.db.artifacts.get(artifactId);
       if (!artifact) {
         throw new Error("Artifact not found.");
@@ -346,6 +522,12 @@ export default capsule({
         .collect();
       for (const chunk of chunks) {
         await ctx.db.artifactChunks.delete(chunk.id);
+      }
+      const grants = await ctx.db.artifactGrants
+        .withIndex("by_artifact", (q) => q.eq("artifactId", artifact.id))
+        .collect();
+      for (const grant of grants) {
+        await ctx.db.artifactGrants.delete(grant.id);
       }
       await ctx.db.artifacts.delete(artifact.id);
     })
