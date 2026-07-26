@@ -10,7 +10,12 @@ import { parseEnv, validateBaseUrl } from "../skills/codex-artifacts/scripts/pub
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_ENV_PATH = join(PROJECT_ROOT, ".env.lakebed.server");
-const LAKEBED_PACKAGE = "lakebed@0.0.29";
+const LAKEBED_EXECUTABLE = join(
+  PROJECT_ROOT,
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "lakebed.cmd" : "lakebed"
+);
 
 function usage() {
   return `Usage:
@@ -105,8 +110,7 @@ async function writeSecureEnvironment(values) {
 }
 
 function runLakebed(arguments_, { capture = false } = {}) {
-  const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-  const result = spawnSync(executable, [LAKEBED_PACKAGE, ...arguments_], {
+  const result = spawnSync(LAKEBED_EXECUTABLE, arguments_, {
     cwd: PROJECT_ROOT,
     encoding: "utf8",
     env: process.env,
@@ -120,7 +124,7 @@ function runLakebed(arguments_, { capture = false } = {}) {
   if (result.status !== 0) {
     const detail = capture ? (result.stderr || result.stdout || "").trim() : "";
     throw new Error(
-      `Lakebed command failed: npx ${LAKEBED_PACKAGE} ${arguments_.join(" ")}` +
+      `Lakebed command failed: lakebed ${arguments_.join(" ")}` +
       (detail ? `\n${detail}` : "")
     );
   }
