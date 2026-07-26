@@ -8,6 +8,7 @@
     "check": "npm run test && npm run build",
     "dev": "npx lakebed@0.0.29 dev",
     "deploy": "npx lakebed@0.0.29 deploy",
+    "setup": "node scripts/setup.mjs",
     "test": "node --test test/*.test.mjs"
   }
 }

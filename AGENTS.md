@@ -3,7 +3,7 @@
 This repository is a Lakebed v0 capsule. Keep application code within `server/`, `client/`, and `shared/`; do not add runtime npm dependencies or Node built-ins to capsule code.
 
 - Run `npm run build` after changes.
-- Keep authorization server-side. Owner identities are the verified Google emails in `OWNER_EMAILS` within `shared/config.ts`.
+- Keep authorization server-side. Emails locate pending invitations; durable owner and recipient authorization uses immutable Lakebed user IDs.
 - New artifacts must remain private until explicit recipient emails are saved.
 - Only owners may change access. Preserve exact-email, domain, and public settings when replacing or republishing HTML.
 - Never add `allow-same-origin` to the artifact iframe sandbox. Artifact HTML is untrusted relative to the authenticated shell.
