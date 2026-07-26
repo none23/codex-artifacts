@@ -4,6 +4,8 @@ Codex Artifacts is a small service for publishing self-contained HTML files as p
 
 You run Codex Artifacts in your own Lakebed account. Your deployment has its own data, owners, URL, and publishing token; there is no shared hosted service or credential.
 
+**[Explore the public, interactive capabilities demo →](https://codex-artifacts.lakebed.app/?artifact=capabilities-demo)**
+
 ## Set up your own service
 
 You need:
@@ -63,7 +65,7 @@ You can also publish an existing HTML file directly from the Codex Artifacts rep
 node scripts/publish.mjs ./report.html --title "Architecture report"
 ```
 
-Your service is now ready to use. See the [public README demo](https://codex-artifacts.lakebed.app/a/readme-demo) for a view-only example of a published artifact.
+Your service is now ready to use. See the [public capabilities demo](https://codex-artifacts.lakebed.app/?artifact=capabilities-demo) for a view-only example of a published artifact.
 
 ## Using Codex Artifacts
 

@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildArtifactUrl,
   parseArguments,
   parseEnv,
   resolvePublishingProfile,
   validateBaseUrl
 } from "../skills/codex-artifacts/scripts/publisher-core.mjs";
+
+test("buildArtifactUrl creates a hosted-deploy-safe root URL", () => {
+  assert.equal(
+    buildArtifactUrl("https://artifacts.example.com", "architecture review"),
+    "https://artifacts.example.com/?artifact=architecture+review"
+  );
+});
 
 test("parses publishing options and repeated recipients", () => {
   assert.deepEqual(

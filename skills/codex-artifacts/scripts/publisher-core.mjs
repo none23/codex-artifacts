@@ -109,6 +109,12 @@ export function validateBaseUrl(value) {
   return parsed.origin;
 }
 
+export function buildArtifactUrl(baseUrl, slug) {
+  const url = new URL("/", validateBaseUrl(baseUrl));
+  url.searchParams.set("artifact", slug);
+  return url.toString();
+}
+
 export function resolvePublishingProfile(environment, configuration) {
   const environmentUrl = nonempty(environment.ARTIFACTS_URL);
   const environmentToken = nonempty(environment.ARTIFACTS_PUBLISH_TOKEN);

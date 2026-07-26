@@ -38,6 +38,10 @@ export function cleanSlug(value: string): string {
     .slice(0, 80);
 }
 
+export function artifactHref(slug: string): string {
+  return `/?artifact=${encodeURIComponent(cleanSlug(slug))}`;
+}
+
 export function parseSharedEmails(value: string | null | undefined): string[] {
   if (typeof value !== "string") {
     return [];

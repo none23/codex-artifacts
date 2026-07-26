@@ -5,6 +5,7 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  buildArtifactUrl,
   parseArguments,
   parseEnv,
   resolvePublishingProfile
@@ -141,7 +142,7 @@ async function main() {
     throw new Error("Publish succeeded, but the server did not confirm public access.");
   }
 
-  const artifactUrl = `${baseUrl}/a/${body.slug}`;
+  const artifactUrl = buildArtifactUrl(baseUrl, body.slug);
   console.log(artifactUrl);
   openInBrowser(artifactUrl, args.noOpen);
 }

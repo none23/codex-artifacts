@@ -15,6 +15,7 @@ import type app from "../server";
 import {
   MAX_ARTIFACT_BYTES,
   MAX_TOTAL_ARTIFACT_BYTES,
+  artifactHref,
   chunkHtml,
   cleanSlug,
   isValidDomain,
@@ -138,7 +139,7 @@ function NewArtifactForm() {
       const title = requestedTitle || file.name.replace(/\.html?$/i, "");
       const slug = slugFromTitle(title);
       const result = await publishArtifact({ title, slug, chunks: chunkHtml(html) });
-      const url = `${window.location.origin}/a/${result.slug}`;
+      const url = `${window.location.origin}${artifactHref(result.slug)}`;
       setNotice(url);
       form.reset();
     } catch (caught) {
@@ -186,7 +187,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
   const deleteArtifact = client.useMutation("deleteArtifact");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const url = `${window.location.origin}/a/${artifact.slug}`;
+  const url = `${window.location.origin}${artifactHref(artifact.slug)}`;
 
   async function replace(file: File | undefined) {
     if (!file) return;
@@ -223,7 +224,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
     <article className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 transition hover:border-white/20">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <Link className="block truncate text-lg font-semibold text-white hover:text-cyan-200" to={`/a/${artifact.slug}`}>{artifact.title}</Link>
+          <Link className="block truncate text-lg font-semibold text-white hover:text-cyan-200" to={artifactHref(artifact.slug)}>{artifact.title}</Link>
           <p className="mt-1 font-mono text-xs text-slate-500">{formatBytes(Number(artifact.sizeBytes))} · updated {formatDate(artifact.updatedAt)}</p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
@@ -233,7 +234,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
 
       <div className="mt-5 grid gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Link className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100" to={`/a/${artifact.slug}`}>Open & manage access</Link>
+          <Link className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100" to={artifactHref(artifact.slug)}>Open & manage access</Link>
           <button className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-white/30" onClick={() => void navigator.clipboard.writeText(url)} type="button">Copy link</button>
           <label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-white/30">
             Replace HTML
@@ -472,9 +473,10 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
   );
 }
 
-function ArtifactFrame() {
+function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
   const auth = useAuth();
-  const { slug = "" } = useParams<{ slug: string }>();
+  const params = useParams<{ slug: string }>();
+  const slug = cleanSlug(requestedSlug ?? params.slug ?? "");
   const artifact = client.useQuery("artifactBySlug", slug);
   const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
   const ownerBootstrap = useOwnerBootstrap();
@@ -600,13 +602,18 @@ function SignedInRoot() {
   return <NonOwnerHome />;
 }
 
-function ArtifactPage() {
-  return <ArtifactFrame />;
+function ArtifactPage({ requestedSlug }: { requestedSlug?: string }) {
+  return <ArtifactFrame requestedSlug={requestedSlug} />;
 }
 
 function AppContent() {
   const location = useLocation();
-  const isArtifactRoute = location.pathname.startsWith("/a/");
+  const requestedSlug = cleanSlug(
+    new URLSearchParams(location.search).get("artifact") ?? ""
+  );
+  const isArtifactRoute =
+    location.pathname.startsWith("/a/") ||
+    (location.pathname === "/" && Boolean(requestedSlug));
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-300 selection:text-slate-950">
@@ -614,7 +621,10 @@ function AppContent() {
       <div className="relative">
         {isArtifactRoute ? null : <AppHeader />}
         <Routes>
-          <Route element={<RootPage />} path="/" />
+          <Route
+            element={requestedSlug ? <ArtifactPage requestedSlug={requestedSlug} /> : <RootPage />}
+            path="/"
+          />
           <Route element={<ArtifactPage />} path="/a/:slug" />
           <Route element={<main className="mx-auto max-w-xl px-6 py-24 text-center"><h1 className="text-4xl font-semibold text-white">Not found</h1><Link className="mt-5 inline-block text-cyan-300 hover:text-cyan-200" to="/">Back home</Link></main>} path="*" />
         </Routes>
