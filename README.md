@@ -24,6 +24,7 @@ You need Node.js 20 or later, a Google account, and a free [Lakebed](https://lak
 ```sh
 git clone https://github.com/none23/codex-artifacts.git
 cd codex-artifacts
+npm ci
 npm run setup -- --owner you@example.com
 ```
 
@@ -113,7 +114,7 @@ ARTIFACTS_URL=https://your-artifacts.lakebed.app
 Generate the token with `openssl rand -hex 32`. Authenticate before the first deployment so Lakebed creates an owned app:
 
 ```sh
-npx lakebed@0.0.29 auth login
+npm exec lakebed -- auth login
 npm run deploy
 ```
 
@@ -133,6 +134,8 @@ Set `ARTIFACTS_URL` to the deployed or custom URL. `lakebed.json` is intentional
 
 Never commit `.env.lakebed.server`, `.lakebed/`, `lakebed.json`, or publishing/deployment tokens.
 
+The owner automation contract is documented in [openapi.yaml](openapi.yaml).
+
 ## Operations
 
 ### Update safely
@@ -151,7 +154,7 @@ Read the deploy ID from the ignored `lakebed.json`, then export:
 
 ```sh
 DEPLOY_ID="$(node -p "JSON.parse(require('fs').readFileSync('lakebed.json')).deployId")"
-npx lakebed@0.0.29 db export "$DEPLOY_ID" --out codex-artifacts-backup.json
+npm exec lakebed -- db export "$DEPLOY_ID" --out codex-artifacts-backup.json
 ```
 
 Lakebed export is not a point-in-time snapshot during concurrent writes. Keep backups private: they contain artifact HTML, owner invitations, and recipient access data.
@@ -187,3 +190,5 @@ Lakebed local state resets when the dev process restarts. Real Google sign-in ac
 ## How it works
 
 The project is a Lakebed v0 capsule. Lakebed supplies first-party Google authentication, transactional storage, and hosting. Artifact HTML is split into database-safe chunks. Owner and recipient invitations bind to durable Lakebed user IDs on first matching sign-in. HTML is rendered with `srcDoc` in a sandboxed iframe without `allow-same-origin`.
+
+Codex Artifacts is an independent project and is not affiliated with or endorsed by OpenAI or Anthropic.

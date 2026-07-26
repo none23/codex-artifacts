@@ -2,13 +2,25 @@
   "name": "codex-artifacts",
   "version": "0.1.0",
   "private": true,
+  "description": "Self-hosted private publishing for agent-generated HTML artifacts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/none23/codex-artifacts.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "scripts": {
-    "build": "npx lakebed@0.0.29 build . --target anonymous",
+    "build": "lakebed build . --target anonymous",
     "check": "npm run test && npm run build",
-    "dev": "npx lakebed@0.0.29 dev",
-    "deploy": "npx lakebed@0.0.29 deploy",
+    "dev": "lakebed dev",
+    "deploy": "lakebed deploy",
     "setup": "node scripts/setup.mjs",
     "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "lakebed": "0.0.29"
   }
 }

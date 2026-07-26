@@ -1,4 +1,6 @@
 .lakebed/
 .env.lakebed.server
+.env.lakebed.server.tmp-*
 lakebed.json
 node_modules/
+codex-artifacts-backup*.json
