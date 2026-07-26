@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "npx lakebed@0.0.29 build . --target anonymous",
+    "check": "npm run test && npm run build",
     "dev": "npx lakebed@0.0.29 dev",
-    "deploy": "npx lakebed@0.0.29 deploy"
+    "deploy": "npx lakebed@0.0.29 deploy",
+    "test": "node --test test/*.test.mjs"
   }
 }
