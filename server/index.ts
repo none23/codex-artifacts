@@ -18,6 +18,7 @@ import {
   MAX_CHUNK_BYTES,
   MAX_SHARED_DOMAINS,
   MAX_SHARED_EMAILS,
+  MAX_TOTAL_ARTIFACT_BYTES,
   chunkHtml,
   cleanSlug,
   cleanTitle,
@@ -275,6 +276,32 @@ async function replaceChunks(ctx: AppContext, artifactId: string, chunks: string
   }
 }
 
+async function requireArtifactCapacity(
+  ctx: AppContext,
+  nextSizeBytes: number,
+  replacedArtifactId?: string
+) {
+  const artifacts = await ctx.db.artifacts
+    .withIndex("by_creation")
+    .collect();
+  let storedBytes = 0;
+  for (const artifact of artifacts) {
+    if (artifact.id === replacedArtifactId) {
+      continue;
+    }
+    const size = Number(artifact.sizeBytes);
+    if (Number.isFinite(size) && size > 0) {
+      storedBytes += size;
+    }
+  }
+  if (storedBytes + nextSizeBytes > MAX_TOTAL_ARTIFACT_BYTES) {
+    throw new Error(
+      "Publishing this artifact would exceed the 768 KiB workspace HTML budget. " +
+      "Delete an older artifact or publish a smaller file."
+    );
+  }
+}
+
 async function publishAsOwner(
   ctx: AppContext,
   input: PublishInput,
@@ -288,6 +315,7 @@ async function publishAsOwner(
     if (!artifact) {
       throw new Error("Artifact not found.");
     }
+    await requireArtifactCapacity(ctx, validated.sizeBytes, artifact.id);
 
     const slugMatch = await ctx.db.artifacts
       .withIndex("by_slug", (q) => q.eq("slug", validated.slug))
@@ -320,6 +348,7 @@ async function publishAsOwner(
   if (existing) {
     throw new Error("That slug is already in use.");
   }
+  await requireArtifactCapacity(ctx, validated.sizeBytes);
 
   const artifact = await ctx.db.artifacts.insert({
     title: validated.title,
