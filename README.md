@@ -16,13 +16,16 @@ You need:
 
 ### 1. Clone, install, and deploy
 
-Replace `you@example.com` with the Google email you will use to administer the service:
+Replace `you@example.com` with the Google email you will use to administer the
+service. Optionally add read-only workspace viewers who should be able to open
+every artifact:
 
 ```sh
 git clone https://github.com/none23/codex-artifacts.git
 cd codex-artifacts
 npm ci
-npm run setup -- --owner you@example.com
+npm run setup -- --owner you@example.com \
+  --viewer viewer@example.com,another-viewer@example.com
 ```
 
 Follow the Lakebed sign-in prompt if one appears. The command creates your deployment, checks that it is healthy, and prints its service URL.
@@ -57,7 +60,9 @@ From any project, ask your agent:
 Use codex-artifacts to create and publish a visual architecture report for this repository.
 ```
 
-The agent creates the HTML, publishes it to your deployment, and opens the private result in your browser. New artifacts are visible only to configured owners until you explicitly share them.
+The agent creates the HTML, publishes it to your deployment, and opens the
+private result in your browser. Owners and workspace viewers can open every
+artifact. Additional recipients can be granted access per artifact.
 
 You can also publish an existing HTML file directly from the Codex Artifacts repository:
 
@@ -73,6 +78,7 @@ The service provides:
 
 - Google sign-in with durable Lakebed identity bindings
 - Private-by-default artifact publishing
+- Deployment-wide read-only workspace viewers
 - Per-artifact invitations by exact email or email domain
 - Optional public links
 - A browser UI for uploading, replacing, downloading, and deleting artifacts
@@ -86,13 +92,18 @@ Useful options:
 
 ```sh
 --slug architecture-report        # Reuse the URL on future updates
---share person@example.com        # Replace the exact-email invitation list
+--share person@example.com        # Set additional exact-email recipients
 --public                          # Allow anyone with the link to view
 --no-open                         # Do not open the result in a browser
 -- --option-like-name.html        # Publish a filename beginning with "-"
 ```
 
-Omitting `--share` or `--public` while updating preserves existing access. The publisher refuses to combine a process-level URL override with a token loaded from the configuration file; override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
+Workspace viewers always retain access and are independent of `--share`. On
+update, supplying `--share` replaces only the artifact's additional exact-email
+invitation list; omitting it preserves existing access. Omitting `--public` on
+update preserves the public setting. The publisher refuses to combine a
+process-level URL override with a token loaded from the configuration file;
+override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
 
 If the skill is copied away from this repository instead of linked, set `CODEX_ARTIFACTS_ENV` to the absolute path of `.env.lakebed.server`.
 
@@ -106,17 +117,29 @@ The setup command:
 4. Creates an owned deployment or updates the deployment already bound in `lakebed.json`.
 5. Saves the deployment URL and verifies `/api/status`.
 
-Re-run `npm run setup` after pulling an update. Existing owners, secrets, and a configured custom URL are preserved unless you explicitly replace the owner list with `--owner`.
+Re-run `npm run setup` after pulling an update. Existing owners, workspace
+viewers, secrets, and a configured custom URL are preserved unless you
+explicitly replace them with `--owner`, `--viewer`, or `--clear-viewers`.
 
 ## Identity and access
 
-`OWNER_EMAILS` and artifact recipient emails are invitations, not permanent authorization keys.
+Owner, workspace-viewer, and per-artifact recipient emails are invitations, not
+permanent authorization keys.
 
 - The first matching verified Google sign-in accepts an invitation and binds it to the account's immutable Lakebed user ID.
 - Later requests authorize the bound user ID rather than trusting current profile email.
 - Removing an owner invitation from `OWNER_EMAILS` and redeploying revokes that binding.
+- Removing a workspace viewer invitation from `WORKSPACE_VIEWER_EMAILS` and
+  redeploying revokes read access across the workspace.
 - Removing an artifact email or domain rule immediately invalidates and removes grants created from that rule.
 - Every configured owner is a deployment administrator and can manage every artifact.
+- Every configured workspace viewer can open every existing and future artifact
+  but cannot publish, delete, or change access.
+- Per-artifact recipients can open only artifacts shared with their exact email
+  or domain.
+
+If an address appears in both `OWNER_EMAILS` and `WORKSPACE_VIEWER_EMAILS`,
+owner access takes precedence.
 
 Domain invitations are broad. Do not add public mail domains such as `gmail.com`; every matching signed-in account could accept access. Prefer exact-email invitations for sensitive artifacts.
 
@@ -133,6 +156,7 @@ Set:
 
 ```dotenv
 OWNER_EMAILS=you@example.com
+WORKSPACE_VIEWER_EMAILS=viewer@example.com,another-viewer@example.com
 PUBLISH_TOKEN=replace-with-a-long-random-secret
 ARTIFACTS_URL=https://your-artifacts.lakebed.app
 ```
@@ -151,6 +175,7 @@ Set `ARTIFACTS_URL` to the deployed or custom URL. `lakebed.json` is intentional
 | Variable | Purpose |
 | --- | --- |
 | `OWNER_EMAILS` | Comma-separated pending/current owner invitations |
+| `WORKSPACE_VIEWER_EMAILS` | Comma-separated read-only viewers of every artifact |
 | `PUBLISH_TOKEN` | Server-side automation secret |
 | `ARTIFACTS_URL` | Publisher destination in the local configuration file |
 | `ARTIFACTS_PUBLISH_TOKEN` | Process-level publisher token override |
@@ -183,7 +208,7 @@ DEPLOY_ID="$(node -p "JSON.parse(require('fs').readFileSync('lakebed.json')).dep
 npm exec lakebed -- db export "$DEPLOY_ID" --out codex-artifacts-backup.json
 ```
 
-Lakebed export is not a point-in-time snapshot during concurrent writes. Keep backups private: they contain artifact HTML, owner invitations, and recipient access data.
+Lakebed export is not a point-in-time snapshot during concurrent writes. Keep backups private: they contain artifact HTML, owner and workspace-viewer invitations, and per-artifact recipient access data.
 
 ### Rotate the publisher token
 
@@ -192,6 +217,13 @@ Replace `PUBLISH_TOKEN` in `.env.lakebed.server` with a new 64-character hex val
 ### Change owners
 
 Update `OWNER_EMAILS` and run `npm run deploy`. Removing an email revokes its bound owner access. Adding an email creates a pending invitation that binds on that person's next sign-in.
+
+### Change workspace viewers
+
+Run `npm run setup -- --viewer one@example.com,two@example.com` to replace the
+read-only workspace viewer list, or use `--clear-viewers` to remove it. The
+change applies to every existing and future artifact. A newly added viewer must
+sign in with the matching verified Google email to bind the invitation.
 
 ## Security and capacity
 
@@ -215,6 +247,6 @@ Lakebed local state resets when the dev process restarts. Real Google sign-in ac
 
 ## How it works
 
-The project is a Lakebed v0 capsule. Lakebed supplies first-party Google authentication, transactional storage, and hosting. Artifact HTML is split into database-safe chunks. Owner and recipient invitations bind to durable Lakebed user IDs on first matching sign-in. HTML is rendered with `srcDoc` in a sandboxed iframe without `allow-same-origin`.
+The project is a Lakebed v0 capsule. Lakebed supplies first-party Google authentication, transactional storage, and hosting. Artifact HTML is split into database-safe chunks. Owner, workspace-viewer, and recipient invitations bind to durable Lakebed user IDs on first matching sign-in. HTML is rendered with `srcDoc` in a sandboxed iframe without `allow-same-origin`.
 
 Codex Artifacts is an independent project and is not affiliated with or endorsed by OpenAI or Anthropic.

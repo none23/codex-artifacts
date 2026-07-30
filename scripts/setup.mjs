@@ -19,13 +19,15 @@ const LAKEBED_EXECUTABLE = join(
 
 function usage() {
   return `Usage:
-  npm run setup -- --owner you@example.com[,another@example.com]
+  npm run setup -- --owner you@example.com [--viewer viewer@example.com]
   npm run setup
 
 Options:
-  --owner <emails>  Configured owner invitations. Repeat or use commas.
-  --skip-login      Use an existing LAKEBED_TOKEN or saved Lakebed login.
-  --help, -h        Show this help.
+  --owner <emails>   Owner invitations. Repeat or use commas.
+  --viewer <emails>  Read-only workspace viewers. Repeat or use commas.
+  --clear-viewers    Remove all configured workspace viewers.
+  --skip-login       Use an existing LAKEBED_TOKEN or saved Lakebed login.
+  --help, -h         Show this help.
 
 The first run writes .env.lakebed.server with mode 0600, authenticates with
 Lakebed, creates an owned deployment, verifies its health, and saves its URL.
@@ -34,6 +36,8 @@ Re-running setup updates the same deployment without replacing existing secrets.
 
 export function parseSetupArguments(args) {
   const owners = [];
+  const viewers = [];
+  let clearViewers = false;
   let skipLogin = false;
   let help = false;
 
@@ -48,6 +52,19 @@ export function parseSetupArguments(args) {
       index += 1;
       continue;
     }
+    if (argument === "--viewer") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--viewer requires one or more email addresses.");
+      }
+      viewers.push(...value.split(","));
+      index += 1;
+      continue;
+    }
+    if (argument === "--clear-viewers") {
+      clearViewers = true;
+      continue;
+    }
     if (argument === "--skip-login") {
       skipLogin = true;
       continue;
@@ -59,21 +76,37 @@ export function parseSetupArguments(args) {
     throw new Error(`Unknown option: ${argument}`);
   }
 
-  return { owners, skipLogin, help };
+  if (clearViewers && viewers.length) {
+    throw new Error("--clear-viewers cannot be combined with --viewer.");
+  }
+  return { owners, viewers, clearViewers, skipLogin, help };
 }
 
-export function normalizeOwnerEmails(values) {
+function normalizeEmails(values, label) {
   const emails = [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
   for (const email of emails) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw new Error(`Invalid owner email: ${email}`);
+      throw new Error(`Invalid ${label} email: ${email}`);
     }
   }
   return emails;
 }
 
+export function normalizeOwnerEmails(values) {
+  return normalizeEmails(values, "owner");
+}
+
+export function normalizeWorkspaceViewerEmails(values) {
+  return normalizeEmails(values, "workspace viewer");
+}
+
 export function serializeEnvironment(values) {
-  const preferredOrder = ["OWNER_EMAILS", "PUBLISH_TOKEN", "ARTIFACTS_URL"];
+  const preferredOrder = [
+    "OWNER_EMAILS",
+    "WORKSPACE_VIEWER_EMAILS",
+    "PUBLISH_TOKEN",
+    "ARTIFACTS_URL"
+  ];
   const keys = [
     ...preferredOrder.filter((key) => values[key] !== undefined),
     ...Object.keys(values)
@@ -183,6 +216,7 @@ async function main() {
 
   const existing = await readExistingEnvironment();
   const requestedOwners = normalizeOwnerEmails(options.owners);
+  const requestedViewers = normalizeWorkspaceViewerEmails(options.viewers);
   const configuredOwners = requestedOwners.length
     ? requestedOwners
     : normalizeOwnerEmails((existing.OWNER_EMAILS ?? "").split(","));
@@ -195,6 +229,9 @@ async function main() {
     OWNER_EMAILS: configuredOwners.join(","),
     PUBLISH_TOKEN: existing.PUBLISH_TOKEN || randomBytes(32).toString("hex")
   };
+  if (requestedViewers.length || options.clearViewers) {
+    configuration.WORKSPACE_VIEWER_EMAILS = requestedViewers.join(",");
+  }
   await writeSecureEnvironment(configuration);
 
   await ensureDeveloperLogin(options.skipLogin);

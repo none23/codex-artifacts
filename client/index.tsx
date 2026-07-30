@@ -67,9 +67,19 @@ function rememberEmails(values: string[]): string[] {
   return emails;
 }
 
-function accessLabel(access: { isPublic: boolean; sharedWith: string[]; sharedDomains: string[] }): string {
+function accessLabel(access: {
+  isPublic: boolean;
+  sharedWith: string[];
+  sharedDomains: string[];
+  workspaceViewerCount?: number;
+}): string {
   if (access.isPublic) return "Public";
   const rules = access.sharedWith.length + access.sharedDomains.length;
+  const workspaceViewerCount = access.workspaceViewerCount ?? 0;
+  if (workspaceViewerCount && rules) {
+    return `Workspace + ${rules} rule${rules === 1 ? "" : "s"}`;
+  }
+  if (workspaceViewerCount) return "Workspace viewers";
   if (!rules) return "Owners only";
   return `${rules} access rule${rules === 1 ? "" : "s"}`;
 }
@@ -155,7 +165,7 @@ function NewArtifactForm() {
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-cyan-300">New artifact</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Publish an HTML file</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Only you can see it until you add recipients. Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Owners and workspace viewers can open every artifact; additional recipients can be added per artifact. Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
         </div>
         <form className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" onSubmit={(event) => void submit(event)}>
           <label className="grid gap-1.5 text-xs font-medium text-slate-400">
@@ -227,7 +237,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
           <Link className="block truncate text-lg font-semibold text-white hover:text-cyan-200" to={artifactHref(artifact.slug)}>{artifact.title}</Link>
           <p className="mt-1 font-mono text-xs text-slate-500">{formatBytes(Number(artifact.sizeBytes))} · updated {formatDate(artifact.updatedAt)}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.workspaceViewerCount || artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
           {accessLabel(artifact)}
         </span>
       </div>
@@ -282,32 +292,48 @@ function OwnerDashboard() {
   );
 }
 
-function NonOwnerHome() {
+function NonOwnerHome({ isWorkspaceViewer }: { isWorkspaceViewer: boolean }) {
   return (
     <main className="mx-auto max-w-2xl px-6 py-24 text-center">
       <p className="font-mono text-xs uppercase tracking-[0.22em] text-cyan-300">Signed in</p>
-      <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white">Open the link that was shared with you.</h1>
-      <p className="mt-5 leading-7 text-slate-400">This private service does not expose a directory of artifacts. Access is granted per link and verified Google email.</p>
+      <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white">
+        {isWorkspaceViewer ? "Workspace viewer access is active." : "Open the link that was shared with you."}
+      </h1>
+      <p className="mt-5 leading-7 text-slate-400">
+        {isWorkspaceViewer
+          ? "You can open every artifact link in this workspace, without management access."
+          : "Additional access is granted per artifact and verified Google email."}
+      </p>
     </main>
   );
 }
 
-function useOwnerBootstrap() {
+function useAccessBootstrap() {
   const viewer = client.useQuery("viewer");
   const claimOwnerAccess = client.useMutation("claimOwnerAccess");
+  const claimWorkspaceViewerAccess = client.useMutation("claimWorkspaceViewerAccess");
   const [state, setState] = useState<"idle" | "claiming" | "claimed" | "error">("idle");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!viewer || viewer.isOwner || !viewer.canClaimOwner || state !== "idle") {
+    if (
+      !viewer ||
+      viewer.isOwner ||
+      viewer.isWorkspaceViewer ||
+      (!viewer.canClaimOwner && !viewer.canClaimWorkspaceViewer) ||
+      state !== "idle"
+    ) {
       return;
     }
 
     setState("claiming");
-    void claimOwnerAccess()
+    const claim = viewer.canClaimOwner
+      ? claimOwnerAccess
+      : claimWorkspaceViewerAccess;
+    void claim()
       .then((result) => {
         if (!result.claimed) {
-          setError("This Google identity could not accept the configured owner invitation.");
+          setError("This Google identity could not accept its configured workspace invitation.");
           setState("error");
           return;
         }
@@ -317,7 +343,13 @@ function useOwnerBootstrap() {
         setError(messageFromError(caught));
         setState("error");
       });
-  }, [viewer?.isOwner, viewer?.canClaimOwner, state]);
+  }, [
+    viewer?.isOwner,
+    viewer?.isWorkspaceViewer,
+    viewer?.canClaimOwner,
+    viewer?.canClaimWorkspaceViewer,
+    state
+  ]);
 
   return { viewer, state, error };
 }
@@ -345,6 +377,10 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
     }
     if (artifact.ownerEmails.includes(email)) {
       setStatus("That address already has owner access.");
+      return;
+    }
+    if (artifact.workspaceViewerEmails.includes(email)) {
+      setStatus("That address already has workspace viewer access.");
       return;
     }
     setEmails((current) => current.includes(email) ? current : [...current, email]);
@@ -390,14 +426,19 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
-        Access · {accessLabel({ isPublic, sharedWith: emails, sharedDomains: domains })}
+        Access · {accessLabel({
+          isPublic,
+          sharedWith: emails,
+          sharedDomains: domains,
+          workspaceViewerCount: artifact.workspaceViewerEmails.length
+        })}
       </button>
       {open ? (
         <div className="absolute right-0 top-[calc(100%+0.6rem)] z-30 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-white/15 bg-slate-950 p-5 text-left shadow-2xl shadow-black/50" role="dialog" aria-label="Artifact access settings">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-semibold text-white">Access settings</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Changes apply to this artifact only.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Changes apply to additional access for this artifact. Owners and workspace viewers always retain access.</p>
             </div>
             <button aria-label="Close access settings" className="text-lg leading-none text-slate-500 hover:text-white" onClick={() => setOpen(false)} type="button">×</button>
           </div>
@@ -410,8 +451,24 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
             </span>
           </label>
 
+          {artifact.workspaceViewerEmails.length ? (
+            <div className="mt-5">
+              <p className="text-xs font-medium text-slate-400">Workspace viewers</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                These deployment-level viewers can open every artifact and cannot be removed here.
+              </p>
+              <ul className="mt-2 grid gap-1">
+                {artifact.workspaceViewerEmails.map((email) => (
+                  <li className="rounded-lg bg-white/[0.04] px-3 py-2 text-xs text-slate-300" key={email}>
+                    <span className="truncate">{email}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="mt-5">
-            <label className="text-xs font-medium text-slate-400" htmlFor="artifact-access-email">People</label>
+            <label className="text-xs font-medium text-slate-400" htmlFor="artifact-access-email">Additional people</label>
             <form className="mt-1.5 flex gap-2" onSubmit={(event) => addEmail(event)}>
               <input
                 className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/60"
@@ -479,7 +536,7 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
   const slug = cleanSlug(requestedSlug ?? params.slug ?? "");
   const artifact = client.useQuery("artifactBySlug", slug);
   const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
-  const ownerBootstrap = useOwnerBootstrap();
+  const accessBootstrap = useAccessBootstrap();
   const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "denied">("idle");
   const [copied, setCopied] = useState(false);
   const downloadUrl = useMemo(() => {
@@ -493,7 +550,7 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
       auth.isLoading ||
       auth.isGuest ||
       accessState !== "idle" ||
-      ownerBootstrap.state === "claiming"
+      accessBootstrap.state === "claiming"
     ) {
       return;
     }
@@ -508,7 +565,7 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
     auth.isGuest,
     slug,
     accessState,
-    ownerBootstrap.state
+    accessBootstrap.state
   ]);
 
   if (artifact === undefined) {
@@ -521,8 +578,8 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
     if (
       accessState === "accepting" ||
       accessState === "accepted" ||
-      ownerBootstrap.state === "claiming" ||
-      ownerBootstrap.state === "claimed"
+      accessBootstrap.state === "claiming" ||
+      accessBootstrap.state === "claimed"
     ) {
       return <main className="grid min-h-screen place-items-center text-slate-500">Verifying shared access…</main>;
     }
@@ -581,25 +638,28 @@ function RootPage() {
 }
 
 function SignedInRoot() {
-  const { viewer, state, error } = useOwnerBootstrap();
+  const { viewer, state, error } = useAccessBootstrap();
   if (!viewer) {
     return <main className="grid min-h-[70vh] place-items-center text-slate-500">Loading workspace…</main>;
   }
   if (viewer.isOwner) {
     return <OwnerDashboard />;
   }
+  if (viewer.isWorkspaceViewer) {
+    return <NonOwnerHome isWorkspaceViewer />;
+  }
   if (state === "claiming" || state === "claimed") {
-    return <main className="grid min-h-[70vh] place-items-center text-slate-500">Activating owner access…</main>;
+    return <main className="grid min-h-[70vh] place-items-center text-slate-500">Activating workspace access…</main>;
   }
   if (state === "error") {
     return (
       <main className="mx-auto grid min-h-[70vh] max-w-xl place-content-center px-6 text-center">
-        <h1 className="text-2xl font-semibold text-white">Owner access could not be activated.</h1>
+        <h1 className="text-2xl font-semibold text-white">Workspace access could not be activated.</h1>
         <p className="mt-3 text-slate-400">{error}</p>
       </main>
     );
   }
-  return <NonOwnerHome />;
+  return <NonOwnerHome isWorkspaceViewer={false} />;
 }
 
 function ArtifactPage({ requestedSlug }: { requestedSlug?: string }) {

@@ -15,8 +15,8 @@ Application code belongs in `server/`, `client/`, and `shared/`. Capsule code ma
 
 ## Security and privacy invariants
 
-- New artifacts remain private until access is explicitly saved.
-- Authorization stays server-side and uses durable Lakebed user IDs after invitation acceptance.
+- New artifacts remain non-public; configured workspace viewers have read-only access to every artifact.
+- Authorization stays server-side and uses durable Lakebed user IDs after owner, workspace-viewer, or per-artifact invitation acceptance.
 - Only deployment owners may publish, replace, delete, or change access.
 - Republishing preserves omitted exact-email, domain, and public settings.
 - The artifact iframe must never gain `allow-same-origin`.

@@ -1,9 +1,10 @@
 ---
 name: codex-artifacts
-description: Create and privately publish self-contained HTML artifacts. Use for requested artifacts, shareable visual pages or links, HTML reports, dashboards, explainers, PR walkthroughs, plans, comparisons, timelines, checklists, status pages, or updates to existing artifacts.
+description: Create, publish or update shareble artifacts.
 disable-model-invocation: true
 argument-hint: "[request or HTML file]"
 ---
+
 
 # Codex Artifacts
 
@@ -33,7 +34,7 @@ node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-arti
 ```
 
 - Omit `--slug` to create; reuse a slug to update.
-- Omit `--share` for owner-only creation or to preserve recipients when updating. If supplied, it replaces the allowlist; include only user-named emails.
+- Use `--share` only for additional user-named recipients; on update, omit it to preserve the artifact-specific allowlist or supply it to replace that allowlist. Deployment-configured workspace viewers always retain read access.
 - Use `--public` only when the user explicitly requests public access.
 - Always let the publisher open the artifact URL in the user's default browser after success. Never pass `--no-open` unless the user explicitly asks not to open the browser.
 
