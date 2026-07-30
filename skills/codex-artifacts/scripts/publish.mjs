@@ -20,6 +20,8 @@ function usage() {
 
 Behavior:
   New artifacts are private by default.
+  Deployment-configured workspace viewers always retain read access.
+  --share sets additional recipients and replaces them on update.
   Reusing --slug updates the existing URL.
   Omitting --share during an update preserves the existing allowlist.
   --public makes the artifact accessible without sign-in.

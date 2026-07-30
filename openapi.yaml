@@ -28,6 +28,8 @@ paths:
         The bearer token is deployment-wide owner automation authority. If `slug`
         identifies an existing artifact, its HTML and title are replaced. Omitted
         `sharedWith` and `isPublic` values preserve existing settings during updates.
+        Deployment-configured workspace viewers retain read access independently
+        of `sharedWith`.
       security:
         - publishToken: []
       requestBody:
@@ -103,6 +105,9 @@ components:
         sharedWith:
           type: array
           maxItems: 50
+          description: |
+            Additional artifact-specific exact-email recipients. Replaces only
+            this list when updating; workspace viewers retain access.
           items:
             type: string
             format: email

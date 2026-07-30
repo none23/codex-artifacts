@@ -30,6 +30,7 @@ import {
   parseSharedEmails,
   utf8Bytes
 } from "../shared/config";
+import { parseWorkspaceViewerEmails } from "../shared/workspace-viewers.mjs";
 
 const schema = {
   artifacts: table({
@@ -56,6 +57,12 @@ const schema = {
   })
     .index("by_user_id", ["userId"])
     .index("by_invited_email", ["invitedEmail"]),
+  workspaceViewerBindings: table({
+    userId: string(),
+    invitedEmail: string()
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_invited_email", ["invitedEmail"]),
   artifactGrants: table({
     artifactId: id("artifacts"),
     userId: string(),
@@ -72,6 +79,14 @@ type AuthEnvironmentContext = Pick<QueryServerContext, "auth" | "env">;
 type OwnerReadContext = AuthEnvironmentContext & {
   db: {
     ownerBindings: Pick<AppContext["db"]["ownerBindings"], "withIndex">;
+  };
+};
+type WorkspaceViewerReadContext = AuthEnvironmentContext & {
+  db: {
+    workspaceViewerBindings: Pick<
+      AppContext["db"]["workspaceViewerBindings"],
+      "withIndex"
+    >;
   };
 };
 type GrantReadContext = {
@@ -105,8 +120,26 @@ function primaryOwnerEmail(ctx: EnvironmentContext): string {
   return ownerEmails(ctx)[0]!;
 }
 
+function workspaceViewerEmails(
+  ctx: EnvironmentContext,
+  configuredOwners = ownerEmails(ctx)
+): string[] {
+  return parseWorkspaceViewerEmails(
+    ctx.env.WORKSPACE_VIEWER_EMAILS,
+    configuredOwners,
+    MAX_SHARED_EMAILS
+  );
+}
+
 function isConfiguredOwner(ctx: EnvironmentContext, value: string): boolean {
   return ownerEmails(ctx).includes(normalizeEmail(value));
+}
+
+function isConfiguredWorkspaceViewer(
+  ctx: EnvironmentContext,
+  value: string
+): boolean {
+  return workspaceViewerEmails(ctx).includes(normalizeEmail(value));
 }
 
 function authenticatedIdentity(
@@ -132,6 +165,15 @@ async function ownerBinding(ctx: OwnerReadContext, userId: string) {
     .first();
 }
 
+async function workspaceViewerBinding(
+  ctx: WorkspaceViewerReadContext,
+  userId: string
+) {
+  return ctx.db.workspaceViewerBindings
+    .withIndex("by_user_id", (q) => q.eq("userId", userId))
+    .first();
+}
+
 async function hasOwnerAccess(ctx: OwnerReadContext): Promise<boolean> {
   const identity = authenticatedIdentity(ctx);
   if (!identity) {
@@ -145,6 +187,19 @@ async function requireOwner(ctx: OwnerReadContext): Promise<void> {
   if (!(await hasOwnerAccess(ctx))) {
     throw new Error("Only the artifact owner can perform this action.");
   }
+}
+
+async function hasWorkspaceViewerAccess(
+  ctx: WorkspaceViewerReadContext
+): Promise<boolean> {
+  const identity = authenticatedIdentity(ctx);
+  if (!identity) {
+    return false;
+  }
+  const binding = await workspaceViewerBinding(ctx, identity.userId);
+  return Boolean(
+    binding && workspaceViewerEmails(ctx).includes(binding.invitedEmail)
+  );
 }
 
 async function claimConfiguredOwner(ctx: AppContext): Promise<boolean> {
@@ -171,6 +226,39 @@ async function claimConfiguredOwner(ctx: AppContext): Promise<boolean> {
     });
   } else if (!existingForInvitation) {
     await ctx.db.ownerBindings.insert({
+      userId: identity.userId,
+      invitedEmail: identity.email
+    });
+  }
+  return true;
+}
+
+async function claimConfiguredWorkspaceViewer(ctx: AppContext): Promise<boolean> {
+  const identity = authenticatedIdentity(ctx);
+  if (!identity || !workspaceViewerEmails(ctx).includes(identity.email)) {
+    return false;
+  }
+
+  const existingForUser = await workspaceViewerBinding(ctx, identity.userId);
+  if (existingForUser?.invitedEmail === identity.email) {
+    return true;
+  }
+
+  const existingForInvitation = await ctx.db.workspaceViewerBindings
+    .withIndex("by_invited_email", (q) => q.eq("invitedEmail", identity.email))
+    .first();
+  if (existingForInvitation && existingForInvitation.userId !== identity.userId) {
+    throw new Error(
+      "This workspace viewer invitation has already been accepted by another identity."
+    );
+  }
+
+  if (existingForUser) {
+    await ctx.db.workspaceViewerBindings.update(existingForUser.id, {
+      invitedEmail: identity.email
+    });
+  } else if (!existingForInvitation) {
+    await ctx.db.workspaceViewerBindings.insert({
       userId: identity.userId,
       invitedEmail: identity.email
     });
@@ -308,13 +396,27 @@ async function publishAsOwner(
   ownerId: string
 ): Promise<{ id: string; slug: string }> {
   const configuredOwners = ownerEmails(ctx);
-  const validated = validatePublishInput(input, configuredOwners);
+  const configuredWorkspaceViewers = workspaceViewerEmails(ctx, configuredOwners);
+  const implicitAccessEmails = [
+    ...configuredOwners,
+    ...configuredWorkspaceViewers
+  ];
+  const artifact = input.artifactId
+    ? await ctx.db.artifacts.get(input.artifactId)
+    : null;
+  if (input.artifactId && !artifact) {
+    throw new Error("Artifact not found.");
+  }
 
-  if (input.artifactId) {
-    const artifact = await ctx.db.artifacts.get(input.artifactId);
-    if (!artifact) {
-      throw new Error("Artifact not found.");
-    }
+  const requestedSharedWith = artifact
+    ? input.sharedWith ?? parseSharedEmails(artifact.sharedWith)
+    : input.sharedWith ?? [];
+  const validated = validatePublishInput(
+    { ...input, sharedWith: requestedSharedWith },
+    implicitAccessEmails
+  );
+
+  if (artifact) {
     await requireArtifactCapacity(ctx, validated.sizeBytes, artifact.id);
 
     const slugMatch = await ctx.db.artifacts
@@ -350,7 +452,7 @@ async function publishAsOwner(
   }
   await requireArtifactCapacity(ctx, validated.sizeBytes);
 
-  const artifact = await ctx.db.artifacts.insert({
+  const createdArtifact = await ctx.db.artifacts.insert({
     title: validated.title,
     slug: validated.slug,
     ownerId,
@@ -361,8 +463,8 @@ async function publishAsOwner(
     sizeBytes: String(validated.sizeBytes),
     chunkCount: String(input.chunks.length)
   });
-  await replaceChunks(ctx, artifact.id, input.chunks);
-  return { id: artifact.id, slug: validated.slug };
+  await replaceChunks(ctx, createdArtifact.id, input.chunks);
+  return { id: createdArtifact.id, slug: validated.slug };
 }
 
 export default capsule({
@@ -375,7 +477,11 @@ export default capsule({
       const identity = authenticatedIdentity(ctx);
       return {
         isOwner: await hasOwnerAccess(ctx),
-        canClaimOwner: Boolean(identity && isConfiguredOwner(ctx, identity.email))
+        isWorkspaceViewer: await hasWorkspaceViewerAccess(ctx),
+        canClaimOwner: Boolean(identity && isConfiguredOwner(ctx, identity.email)),
+        canClaimWorkspaceViewer: Boolean(
+          identity && isConfiguredWorkspaceViewer(ctx, identity.email)
+        )
       };
     }),
 
@@ -384,6 +490,7 @@ export default capsule({
         return [];
       }
 
+      const workspaceViewerCount = workspaceViewerEmails(ctx).length;
       const artifacts = await ctx.db.artifacts
         .withIndex("by_creation")
         .order("desc")
@@ -393,6 +500,7 @@ export default capsule({
         ...artifact,
         sharedWith: parseSharedEmails(artifact.sharedWith),
         sharedDomains: parseSharedEmails(artifact.sharedDomains),
+        workspaceViewerCount,
         isPublic: artifact.isPublic === true
       }));
     }),
@@ -411,7 +519,9 @@ export default capsule({
       const isPublic = artifact.isPublic === true;
       const identity = authenticatedIdentity(ctx);
       const configuredOwners = ownerEmails(ctx);
+      const configuredWorkspaceViewers = workspaceViewerEmails(ctx, configuredOwners);
       const canManage = await hasOwnerAccess(ctx);
+      const hasWorkspaceAccess = await hasWorkspaceViewerAccess(ctx);
       const hasGrant = identity
         ? await validArtifactGrant(
             ctx,
@@ -424,6 +534,7 @@ export default capsule({
       const canView =
         isPublic ||
         canManage ||
+        hasWorkspaceAccess ||
         hasGrant;
       if (!canView) {
         return null;
@@ -444,6 +555,7 @@ export default capsule({
         isPublic,
         canManage,
         ownerEmails: canManage ? configuredOwners : [],
+        workspaceViewerEmails: canManage ? configuredWorkspaceViewers : [],
         sharedWith: canManage ? sharedWith : [],
         sharedDomains: canManage ? sharedDomains : []
       };
@@ -455,12 +567,19 @@ export default capsule({
       claimed: await claimConfiguredOwner(ctx)
     })),
 
+    claimWorkspaceViewerAccess: mutation(async (ctx) => ({
+      claimed: await claimConfiguredWorkspaceViewer(ctx)
+    })),
+
     acceptArtifactAccess: mutation(async (ctx, slugInput: string) => {
       const identity = authenticatedIdentity(ctx);
       if (!identity) {
         return { accepted: false };
       }
       if (await claimConfiguredOwner(ctx)) {
+        return { accepted: true };
+      }
+      if (await claimConfiguredWorkspaceViewer(ctx)) {
         return { accepted: true };
       }
 
@@ -528,7 +647,12 @@ export default capsule({
         throw new Error(`At most ${MAX_SHARED_DOMAINS} domains can be added.`);
       }
 
-      const sharedWith = normalizeSharedEmails(access.emails, ownerEmails(ctx));
+      const configuredOwners = ownerEmails(ctx);
+      const implicitAccessEmails = [
+        ...configuredOwners,
+        ...workspaceViewerEmails(ctx, configuredOwners)
+      ];
+      const sharedWith = normalizeSharedEmails(access.emails, implicitAccessEmails);
       const sharedDomains = normalizeSharedDomains(access.domains);
       await ctx.db.artifacts.update(artifact.id, {
         sharedWith: JSON.stringify(sharedWith),
