@@ -84,6 +84,7 @@ The service provides:
 - A browser UI for uploading, replacing, downloading, and deleting artifacts
 - A shared Codex and Claude Code skill for agent-driven publishing
 - A command-line publisher that can update an existing artifact URL
+- Three-day artifact expiration by default, with per-publish overrides
 - Sandboxed HTML previews without `allow-same-origin`
 
 ### Publishing options
@@ -93,6 +94,8 @@ Useful options:
 ```sh
 --slug architecture-report        # Reuse the URL on future updates
 --share person@example.com        # Set additional exact-email recipients
+--expires-in 1h                   # Override the default three-day lifetime
+--expires-in never                # Keep the artifact until it is deleted
 --public                          # Allow anyone with the link to view
 --no-open                         # Do not open the result in a browser
 -- --option-like-name.html        # Publish a filename beginning with "-"
@@ -101,7 +104,12 @@ Useful options:
 Workspace viewers always retain access and are independent of `--share`. On
 update, supplying `--share` replaces only the artifact's additional exact-email
 invitation list; omitting it preserves existing access. Omitting `--public` on
-update preserves the public setting. The publisher refuses to combine a
+update preserves the public setting. New artifacts expire after three days, and
+every republish resets that three-day timer unless `--expires-in` supplies a
+duration or `never`. Expired artifacts stop being readable immediately and are
+removed when the owner next opens the library or publishes an artifact. Existing
+artifacts from deployments upgraded to this version remain non-expiring until
+their next update. The publisher refuses to combine a
 process-level URL override with a token loaded from the configuration file;
 override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
 
@@ -232,6 +240,11 @@ Artifact HTML is untrusted. It runs in an iframe sandbox without `allow-same-ori
 The publishing token is deployment-wide owner automation authority. Anyone holding it can create artifacts and replace an artifact whose slug they know. Keep it only on trusted owner machines; do not distribute it as a consumer credential.
 
 Lakebed currently limits capsule state to 1 MiB. This project limits one artifact to 512 KiB, individual chunks to 48 KiB, and total artifact HTML to 768 KiB, reserving the remaining state for metadata, access grants, and indexes. Treat the deployment as a small visual-document workspace, not general hosting. Delete superseded artifacts and monitor usage with Lakebed inspection tools.
+
+Expiration is enforced server-side. Because Lakebed v0 has no scheduled-job API,
+expired rows are reclaimed lazily during the next owner library visit or publish;
+they are excluded from reads and capacity calculations as soon as their timestamp
+passes.
 
 Public artifacts are subject to the [Lakebed Acceptable Use Policy](https://lakebed.dev/acceptable-use). The deployment owner is responsible for its published content and recipients.
 

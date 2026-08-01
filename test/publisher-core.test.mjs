@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildArtifactUrl,
   parseArguments,
+  parseExpiration,
   parseEnv,
   resolvePublishingProfile,
   validateBaseUrl
@@ -28,6 +29,8 @@ test("parses publishing options and repeated recipients", () => {
       "--share",
       "three@example.com",
       "--public",
+      "--expires-in",
+      "1h",
       "--no-open"
     ]),
     {
@@ -36,10 +39,19 @@ test("parses publishing options and repeated recipients", () => {
       slug: "architecture",
       sharedWith: ["one@example.com", "two@example.com", "three@example.com"],
       isPublic: true,
+      expiresInSeconds: 3600,
       noOpen: true,
       help: false
     }
   );
+});
+
+test("parses relative and never expiration settings", () => {
+  assert.equal(parseExpiration("3d"), 259200);
+  assert.equal(parseExpiration("2w"), 1209600);
+  assert.equal(parseExpiration("never"), null);
+  assert.throws(() => parseExpiration("90 minutes"), /duration such as/);
+  assert.throws(() => parseExpiration("366d"), /between 1m and 365d/);
 });
 
 test("supports an option-like filename after the option terminator", () => {
@@ -53,6 +65,10 @@ test("rejects unknown options, duplicate scalar options, and missing values", ()
     /only be supplied once/
   );
   assert.throws(() => parseArguments(["report.html", "--title", "--public"]), /requires a value/);
+  assert.throws(
+    () => parseArguments(["report.html", "--expires-in", "1h", "--expires-in", "3d"]),
+    /only be supplied once/
+  );
 });
 
 test("parses simple quoted environment files as data", () => {

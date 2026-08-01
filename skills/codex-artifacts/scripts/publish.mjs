@@ -16,7 +16,7 @@ const PUBLISH_TIMEOUT_MS = 30_000;
 
 function usage() {
   console.error(`Usage:
-  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--public] [--no-open]
+  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--expires-in 3d|never] [--public] [--no-open]
 
 Behavior:
   New artifacts are private by default.
@@ -24,6 +24,8 @@ Behavior:
   --share sets additional recipients and replaces them on update.
   Reusing --slug updates the existing URL.
   Omitting --share during an update preserves the existing allowlist.
+  Artifacts expire in 3 days by default; every update resets that timer.
+  --expires-in accepts durations such as 1h, 3d, or 2w, or never.
   --public makes the artifact accessible without sign-in.
 
 Environment:
@@ -111,6 +113,9 @@ async function main() {
   if (args.isPublic) {
     payload.isPublic = true;
   }
+  if (args.expiresInSeconds !== undefined) {
+    payload.expiresInSeconds = args.expiresInSeconds;
+  }
 
   const response = await fetch(`${baseUrl}/api/artifacts`, {
     method: "POST",
@@ -142,6 +147,12 @@ async function main() {
   }
   if (args.isPublic && body.isPublic !== true) {
     throw new Error("Publish succeeded, but the server did not confirm public access.");
+  }
+  if (args.expiresInSeconds === null && body.expiresAt !== null) {
+    throw new Error("Publish succeeded, but the server did not confirm non-expiring access.");
+  }
+  if (args.expiresInSeconds !== null && typeof body.expiresAt !== "string") {
+    throw new Error("Publish succeeded, but the server did not confirm artifact expiration.");
   }
 
   const artifactUrl = buildArtifactUrl(baseUrl, body.slug);

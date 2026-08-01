@@ -1,5 +1,24 @@
-const OPTIONS_WITH_VALUES = new Set(["--title", "--slug", "--share"]);
+const OPTIONS_WITH_VALUES = new Set(["--title", "--slug", "--share", "--expires-in"]);
 const FLAG_OPTIONS = new Set(["--public", "--no-open", "--help", "-h"]);
+const MAX_EXPIRATION_SECONDS = 365 * 24 * 60 * 60;
+
+export function parseExpiration(value) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "never") {
+    return null;
+  }
+
+  const match = normalized.match(/^(\d+)(m|h|d|w)$/);
+  if (!match) {
+    throw new Error("--expires-in must be a duration such as 1h, 3d, or 2w, or never.");
+  }
+  const units = { m: 60, h: 60 * 60, d: 24 * 60 * 60, w: 7 * 24 * 60 * 60 };
+  const seconds = Number(match[1]) * units[match[2]];
+  if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > MAX_EXPIRATION_SECONDS) {
+    throw new Error("--expires-in must be between 1m and 365d, or never.");
+  }
+  return seconds;
+}
 
 export function parseArguments(args) {
   const result = {
@@ -8,10 +27,12 @@ export function parseArguments(args) {
     slug: undefined,
     sharedWith: [],
     isPublic: false,
+    expiresInSeconds: undefined,
     noOpen: false,
     help: false
   };
   let positionalOnly = false;
+  let expirationSupplied = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -35,6 +56,15 @@ export function parseArguments(args) {
             .map((item) => item.trim())
             .filter(Boolean)
         );
+        continue;
+      }
+
+      if (argument === "--expires-in") {
+        if (expirationSupplied) {
+          throw new Error("--expires-in may only be supplied once.");
+        }
+        result.expiresInSeconds = parseExpiration(value);
+        expirationSupplied = true;
         continue;
       }
 

@@ -3,6 +3,9 @@ export const MAX_CHUNK_BYTES = 48 * 1024;
 export const MAX_TOTAL_ARTIFACT_BYTES = 768 * 1024;
 export const MAX_SHARED_EMAILS = 50;
 export const MAX_SHARED_DOMAINS = 20;
+export const DEFAULT_EXPIRATION_SECONDS = 3 * 24 * 60 * 60;
+export const MIN_EXPIRATION_SECONDS = 60;
+export const MAX_EXPIRATION_SECONDS = 365 * 24 * 60 * 60;
 
 export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -40,6 +43,35 @@ export function cleanSlug(value: string): string {
 
 export function artifactHref(slug: string): string {
   return `/?artifact=${encodeURIComponent(cleanSlug(slug))}`;
+}
+
+export function expirationTimestamp(
+  expiresInSeconds: number | null | undefined,
+  now = Date.now()
+): string {
+  if (expiresInSeconds === null) {
+    return "";
+  }
+
+  const seconds = expiresInSeconds ?? DEFAULT_EXPIRATION_SECONDS;
+  if (
+    !Number.isSafeInteger(seconds) ||
+    seconds < MIN_EXPIRATION_SECONDS ||
+    seconds > MAX_EXPIRATION_SECONDS
+  ) {
+    throw new Error(
+      `Expiration must be between ${MIN_EXPIRATION_SECONDS} seconds and one year, or never.`
+    );
+  }
+  return new Date(now + seconds * 1000).toISOString();
+}
+
+export function isArtifactExpired(expiresAt: string, now = Date.now()): boolean {
+  if (!expiresAt) {
+    return false;
+  }
+  const timestamp = Date.parse(expiresAt);
+  return Number.isFinite(timestamp) && timestamp <= now;
 }
 
 export function parseSharedEmails(value: string | null | undefined): string[] {
