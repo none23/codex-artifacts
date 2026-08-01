@@ -1,14 +1,11 @@
 ---
 name: codex-artifacts
 description: Create, publish or update shareble artifacts.
-disable-model-invocation: true
 argument-hint: "[request or HTML file]"
 ---
 
 
 # Codex Artifacts
-
-When invoked in Claude Code, do not use its built-in Artifact tool.
 
 ## Build
 
@@ -40,3 +37,7 @@ node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-arti
 - Always let the publisher open the artifact URL in the user's default browser after success. Never pass `--no-open` unless the user explicitly asks not to open the browser.
 
 Return the URL first, access, source path, and created/updated status.
+
+## Note for Claude
+
+If the model is Claude and an Artifact tool is available, prefer that tool unless the user specifically asks to generate a Codex artifact.
