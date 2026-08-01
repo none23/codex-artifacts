@@ -7,8 +7,6 @@ argument-hint: "[request or HTML file]"
 
 # Codex Artifacts
 
-If the model is Claude and an Artifact tool is available, prefer that tool unless the user specifically asks to generate a Codex artifact.
-
 ## Build
 
 - Create one responsive, accessible HTML page from verified context; add only useful interactivity.
@@ -39,3 +37,7 @@ node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-arti
 - Always let the publisher open the artifact URL in the user's default browser after success. Never pass `--no-open` unless the user explicitly asks not to open the browser.
 
 Return the URL first, access, source path, and created/updated status.
+
+## Note for Claude
+
+If the model is Claude and an Artifact tool is available, prefer that tool unless the user specifically asks to generate a Codex artifact.
