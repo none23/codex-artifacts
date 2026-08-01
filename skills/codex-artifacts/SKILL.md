@@ -7,7 +7,7 @@ argument-hint: "[request or HTML file]"
 
 # Codex Artifacts
 
-When invoked in Claude Code, do not use its built-in Artifact tool.
+If the model is Claude and an Artifact tool is available, prefer that tool unless the user specifically asks to generate a Codex artifact.
 
 ## Build
 
