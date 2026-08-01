@@ -28,6 +28,8 @@ paths:
         The bearer token is deployment-wide owner automation authority. If `slug`
         identifies an existing artifact, its HTML and title are replaced. Omitted
         `sharedWith` and `isPublic` values preserve existing settings during updates.
+        Omitted `expiresInSeconds` values start or reset the three-day expiration
+        timer. Set it to `null` for an artifact that never expires.
         Deployment-configured workspace viewers retain read access independently
         of `sharedWith`.
       security:
@@ -113,10 +115,20 @@ components:
             format: email
         isPublic:
           type: boolean
+        expiresInSeconds:
+          description: |
+            Relative lifetime in whole seconds, from 60 seconds through one year.
+            Omit for the three-day default or set to null to never expire. The
+            lifetime starts again whenever the artifact is published or replaced.
+          oneOf:
+            - type: integer
+              minimum: 60
+              maximum: 31536000
+            - type: "null"
     PublishResponse:
       type: object
       additionalProperties: false
-      required: [id, slug, updated, isPublic]
+      required: [id, slug, updated, isPublic, expiresAt]
       properties:
         id:
           type: string
@@ -126,6 +138,12 @@ components:
           type: boolean
         isPublic:
           type: boolean
+        expiresAt:
+          description: Absolute expiration time, or null when expiration is disabled.
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
     Error:
       type: object
       additionalProperties: false

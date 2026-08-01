@@ -23,6 +23,8 @@ import {
   cleanSlug,
   cleanTitle,
   emailDomain,
+  expirationTimestamp,
+  isArtifactExpired,
   isValidEmail,
   normalizeEmail,
   normalizeSharedDomains,
@@ -41,6 +43,7 @@ const schema = {
     sharedWith: string().default("[]"),
     sharedDomains: string().default("[]"),
     isPublic: boolean().default(false),
+    expiresAt: string().default(""),
     sizeBytes: string(),
     chunkCount: string()
   })
@@ -102,6 +105,7 @@ type PublishInput = {
   chunks: string[];
   sharedWith?: string[];
   isPublic?: boolean;
+  expiresInSeconds?: number | null;
 };
 
 function ownerEmails(ctx: EnvironmentContext): string[] {
@@ -332,6 +336,7 @@ function validatePublishInput(input: PublishInput, configuredOwners: string[]) {
   const slug = cleanSlug(input.slug);
   const sizeBytes = validateChunks(input.chunks);
   const sharedWith = normalizeSharedEmails(input.sharedWith ?? [], configuredOwners);
+  const expiresAt = expirationTimestamp(input.expiresInSeconds);
 
   if (!title) {
     throw new Error("Title is required.");
@@ -343,7 +348,7 @@ function validatePublishInput(input: PublishInput, configuredOwners: string[]) {
     throw new Error(`At most ${MAX_SHARED_EMAILS} people can be added.`);
   }
 
-  return { title, slug, sizeBytes, sharedWith };
+  return { title, slug, sizeBytes, sharedWith, expiresAt };
 }
 
 async function replaceChunks(ctx: AppContext, artifactId: string, chunks: string[]) {
@@ -362,6 +367,32 @@ async function replaceChunks(ctx: AppContext, artifactId: string, chunks: string
       content: chunks[index] ?? ""
     });
   }
+}
+
+async function deleteArtifactData(ctx: AppContext, artifactId: string) {
+  const chunks = await ctx.db.artifactChunks
+    .withIndex("by_artifact_part", (q) => q.eq("artifactId", artifactId))
+    .collect();
+  for (const chunk of chunks) {
+    await ctx.db.artifactChunks.delete(chunk.id);
+  }
+
+  const grants = await ctx.db.artifactGrants
+    .withIndex("by_artifact", (q) => q.eq("artifactId", artifactId))
+    .collect();
+  for (const grant of grants) {
+    await ctx.db.artifactGrants.delete(grant.id);
+  }
+  await ctx.db.artifacts.delete(artifactId);
+}
+
+async function removeExpiredArtifacts(ctx: AppContext): Promise<number> {
+  const artifacts = await ctx.db.artifacts.withIndex("by_creation").collect();
+  const expired = artifacts.filter((artifact) => isArtifactExpired(artifact.expiresAt));
+  for (const artifact of expired) {
+    await deleteArtifactData(ctx, artifact.id);
+  }
+  return expired.length;
 }
 
 async function requireArtifactCapacity(
@@ -394,7 +425,8 @@ async function publishAsOwner(
   ctx: AppContext,
   input: PublishInput,
   ownerId: string
-): Promise<{ id: string; slug: string }> {
+): Promise<{ id: string; slug: string; expiresAt: string | null }> {
+  await removeExpiredArtifacts(ctx);
   const configuredOwners = ownerEmails(ctx);
   const configuredWorkspaceViewers = workspaceViewerEmails(ctx, configuredOwners);
   const implicitAccessEmails = [
@@ -432,6 +464,7 @@ async function publishAsOwner(
       slug: validated.slug,
       sharedWith: JSON.stringify(validated.sharedWith),
       isPublic: input.isPublic ?? artifact.isPublic,
+      expiresAt: validated.expiresAt,
       sizeBytes: String(validated.sizeBytes),
       chunkCount: String(input.chunks.length)
     });
@@ -441,7 +474,11 @@ async function publishAsOwner(
       validated.sharedWith,
       parseSharedEmails(artifact.sharedDomains)
     );
-    return { id: artifact.id, slug: validated.slug };
+    return {
+      id: artifact.id,
+      slug: validated.slug,
+      expiresAt: validated.expiresAt || null
+    };
   }
 
   const existing = await ctx.db.artifacts
@@ -460,11 +497,16 @@ async function publishAsOwner(
     sharedWith: JSON.stringify(validated.sharedWith),
     sharedDomains: "[]",
     isPublic: input.isPublic === true,
+    expiresAt: validated.expiresAt,
     sizeBytes: String(validated.sizeBytes),
     chunkCount: String(input.chunks.length)
   });
   await replaceChunks(ctx, createdArtifact.id, input.chunks);
-  return { id: createdArtifact.id, slug: validated.slug };
+  return {
+    id: createdArtifact.id,
+    slug: validated.slug,
+    expiresAt: validated.expiresAt || null
+  };
 }
 
 export default capsule({
@@ -496,13 +538,16 @@ export default capsule({
         .order("desc")
         .collect();
 
-      return artifacts.map((artifact) => ({
-        ...artifact,
-        sharedWith: parseSharedEmails(artifact.sharedWith),
-        sharedDomains: parseSharedEmails(artifact.sharedDomains),
-        workspaceViewerCount,
-        isPublic: artifact.isPublic === true
-      }));
+      return artifacts
+        .filter((artifact) => !isArtifactExpired(artifact.expiresAt))
+        .map((artifact) => ({
+          ...artifact,
+          expiresAt: artifact.expiresAt || null,
+          sharedWith: parseSharedEmails(artifact.sharedWith),
+          sharedDomains: parseSharedEmails(artifact.sharedDomains),
+          workspaceViewerCount,
+          isPublic: artifact.isPublic === true
+        }));
     }),
 
     artifactBySlug: query(async (ctx, slugInput: string) => {
@@ -510,7 +555,7 @@ export default capsule({
       const artifact = await ctx.db.artifacts
         .withIndex("by_slug", (q) => q.eq("slug", slug))
         .first();
-      if (!artifact) {
+      if (!artifact || isArtifactExpired(artifact.expiresAt)) {
         return null;
       }
 
@@ -552,6 +597,7 @@ export default capsule({
         html: chunks.map((chunk) => chunk.content).join(""),
         sizeBytes: Number(artifact.sizeBytes),
         updatedAt: artifact.updatedAt,
+        expiresAt: artifact.expiresAt || null,
         isPublic,
         canManage,
         ownerEmails: canManage ? configuredOwners : [],
@@ -587,7 +633,7 @@ export default capsule({
       const artifact = await ctx.db.artifacts
         .withIndex("by_slug", (q) => q.eq("slug", slug))
         .first();
-      if (!artifact) {
+      if (!artifact || isArtifactExpired(artifact.expiresAt)) {
         return { accepted: false };
       }
       if (artifact.isPublic === true) {
@@ -630,6 +676,26 @@ export default capsule({
       return publishAsOwner(ctx, input, ctx.auth.userId);
     }),
 
+    setArtifactExpiration: mutation(async (
+      ctx,
+      artifactId: string,
+      expiresInSeconds: number | null
+    ) => {
+      await requireOwner(ctx);
+      const artifact = await ctx.db.artifacts.get(artifactId);
+      if (!artifact || isArtifactExpired(artifact.expiresAt)) {
+        throw new Error("Artifact not found.");
+      }
+      const expiresAt = expirationTimestamp(expiresInSeconds);
+      await ctx.db.artifacts.update(artifact.id, { expiresAt });
+      return { expiresAt: expiresAt || null };
+    }),
+
+    pruneExpiredArtifacts: mutation(async (ctx) => {
+      await requireOwner(ctx);
+      return { removed: await removeExpiredArtifacts(ctx) };
+    }),
+
     setArtifactAccess: mutation(async (
       ctx,
       artifactId: string,
@@ -670,19 +736,7 @@ export default capsule({
         throw new Error("Artifact not found.");
       }
 
-      const chunks = await ctx.db.artifactChunks
-        .withIndex("by_artifact_part", (q) => q.eq("artifactId", artifact.id))
-        .collect();
-      for (const chunk of chunks) {
-        await ctx.db.artifactChunks.delete(chunk.id);
-      }
-      const grants = await ctx.db.artifactGrants
-        .withIndex("by_artifact", (q) => q.eq("artifactId", artifact.id))
-        .collect();
-      for (const grant of grants) {
-        await ctx.db.artifactGrants.delete(grant.id);
-      }
-      await ctx.db.artifacts.delete(artifact.id);
+      await deleteArtifactData(ctx, artifact.id);
     })
   },
 
@@ -711,12 +765,24 @@ export default capsule({
           html?: unknown;
           sharedWith?: unknown;
           isPublic?: unknown;
+          expiresInSeconds?: unknown;
         }>();
         if (typeof body.title !== "string" || typeof body.html !== "string") {
           return json({ error: "title and html must be strings" }, { status: 400 });
         }
 
         const title = cleanTitle(body.title);
+        if (
+          body.expiresInSeconds !== undefined &&
+          body.expiresInSeconds !== null &&
+          typeof body.expiresInSeconds !== "number"
+        ) {
+          return json(
+            { error: "expiresInSeconds must be a number of seconds or null" },
+            { status: 400 }
+          );
+        }
+        await removeExpiredArtifacts(ctx as AppContext);
         const fallbackSlug = `${cleanSlug(title) || "artifact"}-${Date.now().toString(36)}`;
         const requestedSlug = typeof body.slug === "string" ? cleanSlug(body.slug) : "";
         const slug = requestedSlug || fallbackSlug;
@@ -740,7 +806,8 @@ export default capsule({
             sharedWith,
             isPublic: typeof body.isPublic === "boolean"
               ? body.isPublic
-              : existing?.isPublic === true
+              : existing?.isPublic === true,
+            expiresInSeconds: body.expiresInSeconds as number | null | undefined
           },
           `automation:${primaryOwnerEmail(ctx)}`
         );

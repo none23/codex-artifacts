@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type app from "../server";
 import {
+  DEFAULT_EXPIRATION_SECONDS,
   MAX_ARTIFACT_BYTES,
   MAX_TOTAL_ARTIFACT_BYTES,
   artifactHref,
@@ -26,6 +27,14 @@ import {
 
 const client = createClient<typeof app>();
 const KNOWN_EMAILS_KEY = "codex-artifacts:known-emails";
+const EXPIRATION_OPTIONS = [
+  { label: "1 hour", value: "3600" },
+  { label: "1 day", value: "86400" },
+  { label: "3 days (default)", value: String(DEFAULT_EXPIRATION_SECONDS) },
+  { label: "1 week", value: "604800" },
+  { label: "30 days", value: "2592000" },
+  { label: "Never", value: "never" }
+] as const;
 
 function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -37,6 +46,14 @@ function formatDate(value: string): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function expirationValue(value: FormDataEntryValue | string | null): number | null {
+  return value === "never" ? null : Number(value || DEFAULT_EXPIRATION_SECONDS);
+}
+
+function expirationLabel(expiresAt: string | null): string {
+  return expiresAt ? `expires ${formatDate(expiresAt)}` : "never expires";
 }
 
 function slugFromTitle(title: string): string {
@@ -148,7 +165,12 @@ function NewArtifactForm() {
       const html = await file.text();
       const title = requestedTitle || file.name.replace(/\.html?$/i, "");
       const slug = slugFromTitle(title);
-      const result = await publishArtifact({ title, slug, chunks: chunkHtml(html) });
+      const result = await publishArtifact({
+        title,
+        slug,
+        chunks: chunkHtml(html),
+        expiresInSeconds: expirationValue(data.get("expiresInSeconds"))
+      });
       const url = `${window.location.origin}${artifactHref(result.slug)}`;
       setNotice(url);
       form.reset();
@@ -165,9 +187,10 @@ function NewArtifactForm() {
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-cyan-300">New artifact</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Publish an HTML file</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Owners and workspace viewers can open every artifact; additional recipients can be added per artifact. Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Artifacts expire after three days by default, freeing their storage automatically. Owners and workspace viewers can open every artifact; additional recipients can be added per artifact.</p>
+          <p className="mt-2 text-xs text-slate-500">Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
         </div>
-        <form className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" onSubmit={(event) => void submit(event)}>
+        <form className="grid min-w-0 gap-3 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
           <label className="grid gap-1.5 text-xs font-medium text-slate-400">
             Title (optional)
             <input className="h-11 rounded-xl border border-white/10 bg-slate-950/70 px-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/70" name="title" placeholder="Architecture review" />
@@ -175,6 +198,12 @@ function NewArtifactForm() {
           <label className="grid gap-1.5 text-xs font-medium text-slate-400">
             HTML file
             <input accept=".html,.htm,text/html" className="h-11 max-w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-300 file:mr-3 file:border-0 file:bg-transparent file:text-cyan-300" name="file" required type="file" />
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+            Expires in
+            <select className="h-11 rounded-xl border border-white/10 bg-slate-950/70 px-3 text-sm text-white outline-none focus:border-cyan-400/70" defaultValue={String(DEFAULT_EXPIRATION_SECONDS)} name="expiresInSeconds">
+              {EXPIRATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           <button className="h-11 self-end rounded-xl bg-cyan-300 px-5 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-60" disabled={busy} type="submit">{busy ? "Publishing…" : "Publish"}</button>
         </form>
@@ -195,8 +224,10 @@ type OwnedArtifact = NonNullable<ReturnType<typeof client.useQuery<"ownedArtifac
 function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
   const publishArtifact = client.useMutation("publishArtifact");
   const deleteArtifact = client.useMutation("deleteArtifact");
+  const setArtifactExpiration = client.useMutation("setArtifactExpiration");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expiresIn, setExpiresIn] = useState(String(DEFAULT_EXPIRATION_SECONDS));
   const url = `${window.location.origin}${artifactHref(artifact.slug)}`;
 
   async function replace(file: File | undefined) {
@@ -209,9 +240,23 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
         title: artifact.title,
         slug: artifact.slug,
         chunks: chunkHtml(await file.text()),
-        sharedWith: artifact.sharedWith
+        sharedWith: artifact.sharedWith,
+        expiresInSeconds: expirationValue(expiresIn)
       });
-      setStatus("HTML replaced.");
+      setStatus("HTML replaced and expiration reset.");
+    } catch (caught) {
+      setStatus(messageFromError(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyExpiration() {
+    setBusy(true);
+    setStatus("");
+    try {
+      await setArtifactExpiration(artifact.id, expirationValue(expiresIn));
+      setStatus("Expiration updated.");
     } catch (caught) {
       setStatus(messageFromError(caught));
     } finally {
@@ -236,6 +281,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
         <div className="min-w-0">
           <Link className="block truncate text-lg font-semibold text-white hover:text-cyan-200" to={artifactHref(artifact.slug)}>{artifact.title}</Link>
           <p className="mt-1 font-mono text-xs text-slate-500">{formatBytes(Number(artifact.sizeBytes))} · updated {formatDate(artifact.updatedAt)}</p>
+          <p className="mt-1 font-mono text-xs text-amber-200/70">{expirationLabel(artifact.expiresAt)}</p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.workspaceViewerCount || artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
           {accessLabel(artifact)}
@@ -252,6 +298,15 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
           </label>
           <button className="ml-auto rounded-lg px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-400/10 disabled:opacity-50" disabled={busy} onClick={() => void remove()} type="button">Delete</button>
         </div>
+        <div className="flex flex-wrap items-end gap-2 border-t border-white/[0.07] pt-3">
+          <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+            New lifetime (also used by Replace HTML)
+            <select className="h-9 rounded-lg border border-white/10 bg-slate-950 px-3 text-xs text-slate-300 outline-none focus:border-cyan-400/70" disabled={busy} onChange={(event) => setExpiresIn(event.currentTarget.value)} value={expiresIn}>
+              {EXPIRATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <button className="h-9 rounded-lg border border-white/10 px-3 text-xs font-medium text-slate-300 hover:border-white/30 disabled:opacity-50" disabled={busy} onClick={() => void applyExpiration()} type="button">Apply now</button>
+        </div>
         {status ? <p className="text-xs text-slate-400">{status}</p> : null}
       </div>
     </article>
@@ -260,6 +315,10 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
 
 function OwnerDashboard() {
   const artifacts = client.useQuery("ownedArtifacts");
+  const pruneExpiredArtifacts = client.useMutation("pruneExpiredArtifacts");
+  useEffect(() => {
+    void pruneExpiredArtifacts();
+  }, []);
   const usedBytes = artifacts?.reduce(
     (total, artifact) => total + Number(artifact.sizeBytes),
     0
@@ -609,7 +668,7 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
           <Link aria-label="Back to artifacts" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 text-lg text-slate-300 transition hover:border-white/30 hover:text-white" to="/">←</Link>
           <div className="min-w-0">
             <h1 className="truncate font-semibold text-white">{artifact.title}</h1>
-            <p className="font-mono text-[11px] text-slate-500">{formatBytes(artifact.sizeBytes)} · sandboxed preview</p>
+            <p className="font-mono text-[11px] text-slate-500">{formatBytes(artifact.sizeBytes)} · {expirationLabel(artifact.expiresAt)} · sandboxed preview</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
