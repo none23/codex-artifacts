@@ -1,7 +1,6 @@
 ---
 name: codex-artifacts
 description: Create, publish or update shareble artifacts.
-disable-model-invocation: true
 argument-hint: "[request or HTML file]"
 ---
 
