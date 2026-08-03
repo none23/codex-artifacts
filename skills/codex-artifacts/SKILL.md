@@ -19,6 +19,7 @@ argument-hint: "[request or HTML file]"
 ## UI Design
 - Make sure there is sufficient contrast in the colors, so that texts stay readable and accessible
 - Default to a dark theme
+- Avoid sticky headers on mobile
 - Avoid navy and teal colorscheme
 - Avoid elements that don't add meaning to the reader, e.g. unnecessary tags, icons that don't convey meaning, unnecessary cards
 - The main goal should be to keep the design easy for a human to scan and understand
