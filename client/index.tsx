@@ -26,6 +26,7 @@ import {
 } from "../shared/config";
 
 const client = createClient<typeof app>();
+const DEFAULT_DOCUMENT_TITLE = "Codex Artifacts";
 const KNOWN_EMAILS_KEY = "codex-artifacts:known-emails";
 const EXPIRATION_OPTIONS = [
   { label: "1 hour", value: "3600" },
@@ -598,6 +599,17 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
   const accessBootstrap = useAccessBootstrap();
   const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "denied">("idle");
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    document.title = artifact
+      ? `${artifact.title} · ${DEFAULT_DOCUMENT_TITLE}`
+      : DEFAULT_DOCUMENT_TITLE;
+
+    return () => {
+      document.title = DEFAULT_DOCUMENT_TITLE;
+    };
+  }, [artifact?.title]);
+
   const downloadUrl = useMemo(() => {
     if (!artifact) return "";
     return URL.createObjectURL(new Blob([artifact.html], { type: "text/html;charset=utf-8" }));
@@ -733,6 +745,12 @@ function AppContent() {
   const isArtifactRoute =
     location.pathname.startsWith("/a/") ||
     (location.pathname === "/" && Boolean(requestedSlug));
+
+  useEffect(() => {
+    if (!isArtifactRoute) {
+      document.title = DEFAULT_DOCUMENT_TITLE;
+    }
+  }, [isArtifactRoute]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-300 selection:text-slate-950">
