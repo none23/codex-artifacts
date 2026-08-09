@@ -590,10 +590,8 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
   );
 }
 
-function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
+function ArtifactFrame({ slug }: { slug: string }) {
   const auth = useAuth();
-  const params = useParams<{ slug: string }>();
-  const slug = cleanSlug(requestedSlug ?? params.slug ?? "");
   const artifact = client.useQuery("artifactBySlug", slug);
   const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
   const accessBootstrap = useAccessBootstrap();
@@ -764,7 +762,9 @@ function SignedInRoot() {
 }
 
 function ArtifactPage({ requestedSlug }: { requestedSlug?: string }) {
-  return <ArtifactFrame requestedSlug={requestedSlug} />;
+  const params = useParams<{ slug: string }>();
+  const slug = cleanSlug(requestedSlug ?? params.slug ?? "");
+  return <ArtifactFrame key={slug} slug={slug} />;
 }
 
 function AppContent() {
