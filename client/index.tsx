@@ -657,6 +657,9 @@ function ArtifactFrame({ slug }: { slug: string }) {
     return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
   }
   if (artifact === null) {
+    if (auth.isLoading) {
+      return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
+    }
     if (auth.isGuest) {
       return <SignInCard shared />;
     }
@@ -674,12 +677,7 @@ function ArtifactFrame({ slug }: { slug: string }) {
         </main>
       );
     }
-    if (
-      accessState === "accepting" ||
-      accessState === "accepted" ||
-      accessBootstrap.state === "claiming" ||
-      (accessBootstrap.state === "claimed" && accessState === "idle")
-    ) {
+    if (accessState !== "denied") {
       return <main className="grid min-h-screen place-items-center text-slate-500">Verifying shared access…</main>;
     }
     return (
