@@ -597,7 +597,8 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
   const artifact = client.useQuery("artifactBySlug", slug);
   const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
   const accessBootstrap = useAccessBootstrap();
-  const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "denied">("idle");
+  const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "expired" | "denied">("idle");
+  const [expiredAt, setExpiredAt] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -628,7 +629,14 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
 
     setAccessState("accepting");
     void acceptArtifactAccess(slug)
-      .then((result) => setAccessState(result.accepted ? "accepted" : "denied"))
+      .then((result) => {
+        if (result.status === "expired") {
+          setExpiredAt(result.expiredAt);
+          setAccessState("expired");
+          return;
+        }
+        setAccessState(result.status === "accepted" ? "accepted" : "denied");
+      })
       .catch(() => setAccessState("denied"));
   }, [
     artifact,
@@ -639,6 +647,14 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
     accessBootstrap.state
   ]);
 
+  useEffect(() => {
+    if (artifact !== null || accessState !== "accepted") {
+      return;
+    }
+    const timeout = window.setTimeout(() => setAccessState("denied"), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [artifact, accessState]);
+
   if (artifact === undefined) {
     return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
   }
@@ -646,11 +662,25 @@ function ArtifactFrame({ requestedSlug }: { requestedSlug?: string }) {
     if (auth.isGuest) {
       return <SignInCard shared />;
     }
+    if (accessState === "expired") {
+      return (
+        <main className="mx-auto grid min-h-screen max-w-xl place-content-center px-6 py-24 text-center">
+          <p className="font-mono text-xs uppercase tracking-[0.22em] text-amber-300">Expired</p>
+          <h1 className="mt-4 text-3xl font-semibold text-white">This artifact has expired.</h1>
+          <p className="mt-4 text-slate-400">
+            It expired {formatDate(expiredAt)}. Ask the owner to republish it with a longer lifetime.
+          </p>
+          <div className="mt-7">
+            <Link className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/30" to="/">Back</Link>
+          </div>
+        </main>
+      );
+    }
     if (
       accessState === "accepting" ||
       accessState === "accepted" ||
       accessBootstrap.state === "claiming" ||
-      accessBootstrap.state === "claimed"
+      (accessBootstrap.state === "claimed" && accessState === "idle")
     ) {
       return <main className="grid min-h-screen place-items-center text-slate-500">Verifying shared access…</main>;
     }

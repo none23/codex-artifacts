@@ -108,6 +108,11 @@ type PublishInput = {
   expiresInSeconds?: number | null;
 };
 
+type ArtifactAccessResult =
+  | { status: "accepted" }
+  | { status: "expired"; expiredAt: string }
+  | { status: "unavailable" };
+
 function ownerEmails(ctx: EnvironmentContext): string[] {
   const configured = (ctx.env.OWNER_EMAILS ?? "")
     .split(",")
@@ -617,27 +622,21 @@ export default capsule({
       claimed: await claimConfiguredWorkspaceViewer(ctx)
     })),
 
-    acceptArtifactAccess: mutation(async (ctx, slugInput: string) => {
+    acceptArtifactAccess: mutation(async (
+      ctx,
+      slugInput: string
+    ): Promise<ArtifactAccessResult> => {
       const identity = authenticatedIdentity(ctx);
-      if (!identity) {
-        return { accepted: false };
-      }
-      if (await claimConfiguredOwner(ctx)) {
-        return { accepted: true };
-      }
-      if (await claimConfiguredWorkspaceViewer(ctx)) {
-        return { accepted: true };
-      }
-
       const slug = cleanSlug(slugInput);
       const artifact = await ctx.db.artifacts
         .withIndex("by_slug", (q) => q.eq("slug", slug))
         .first();
-      if (!artifact || isArtifactExpired(artifact.expiresAt)) {
-        return { accepted: false };
+      if (!artifact) {
+        return { status: "unavailable" };
       }
-      if (artifact.isPublic === true) {
-        return { accepted: true };
+
+      if (!identity) {
+        return { status: "unavailable" };
       }
 
       const sharedWith = parseSharedEmails(artifact.sharedWith);
@@ -649,18 +648,31 @@ export default capsule({
           ? "domain"
           : null;
       const ruleValue = ruleType === "email" ? identity.email : domain;
-      if (!ruleType) {
-        return { accepted: false };
+      const isOwner = await claimConfiguredOwner(ctx);
+      const isWorkspaceViewer = isOwner
+        ? false
+        : await claimConfiguredWorkspaceViewer(ctx);
+      const hasGrant = await validArtifactGrant(
+        ctx,
+        artifact.id,
+        identity.userId,
+        sharedWith,
+        sharedDomains
+      );
+      const canView =
+        artifact.isPublic === true ||
+        isOwner ||
+        isWorkspaceViewer ||
+        hasGrant ||
+        ruleType !== null;
+      if (!canView) {
+        return { status: "unavailable" };
+      }
+      if (isArtifactExpired(artifact.expiresAt)) {
+        return { status: "expired", expiredAt: artifact.expiresAt };
       }
 
-      const grants = await ctx.db.artifactGrants
-        .withIndex("by_artifact_user", (q) =>
-          q.eq("artifactId", artifact.id).eq("userId", identity.userId)
-        )
-        .collect();
-      if (!grants.some((grant) =>
-        grant.ruleType === ruleType && grant.ruleValue === ruleValue
-      )) {
+      if (!isOwner && !isWorkspaceViewer && !hasGrant && ruleType) {
         await ctx.db.artifactGrants.insert({
           artifactId: artifact.id,
           userId: identity.userId,
@@ -668,7 +680,7 @@ export default capsule({
           ruleValue
         });
       }
-      return { accepted: true };
+      return { status: "accepted" };
     }),
 
     publishArtifact: mutation(async (ctx, input: PublishInput) => {
