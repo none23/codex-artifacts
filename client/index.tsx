@@ -128,15 +128,15 @@ function accessLabel(access: {
 function SignInCard({ shared = false }: { shared?: boolean }) {
   return (
     <section className={`mx-auto flex max-w-xl items-center px-6 py-16 ${shared ? "min-h-screen" : "min-h-[70vh]"}`}>
-      <div className="w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl shadow-cyan-950/20 backdrop-blur">
-        <p className="mb-4 font-mono text-xs uppercase tracking-[0.24em] text-cyan-300">Private workspace</p>
+      <div className="w-full rounded-2xl border border-[#242424] bg-[#121212] p-8 shadow-2xl shadow-black/30">
+        <p className="mb-4 font-mono text-xs uppercase tracking-[0.24em] text-[#de5e1e]">Private workspace</p>
         <h1 className="text-3xl font-semibold tracking-tight text-white">
           {shared ? "Sign in to open this artifact" : "Your Codex artifacts, in one quiet place."}
         </h1>
-        <p className="mt-4 leading-7 text-slate-400">
+        <p className="mt-4 leading-7 text-[#a3a3a3]">
           Access is checked against a verified Google email. Shared links do not make their contents public.
         </p>
-        <SignInWithGoogle className="mt-8 inline-flex items-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-100" />
+        <SignInWithGoogle className="mt-8 inline-flex items-center rounded-lg bg-[#de5e1e] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#ed7134]" />
       </div>
     </section>
   );
@@ -145,19 +145,19 @@ function SignInCard({ shared = false }: { shared?: boolean }) {
 function AppHeader() {
   const auth = useAuth();
   return (
-    <header className="border-b border-white/10 bg-slate-950/75 backdrop-blur-xl">
+    <header className="border-b border-[#242424] bg-[#0b0b0b]">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <Link className="flex items-center gap-3" to="/">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-blue-500 font-mono text-sm font-black text-slate-950">A</span>
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#de5e1e] font-mono text-sm font-black text-white">A</span>
           <span>
             <span className="block text-sm font-semibold text-white">Codex Artifacts</span>
-            <span className="block font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">private by default</span>
+            <span className="block font-mono text-[10px] uppercase tracking-[0.18em] text-[#737373]">private by default</span>
           </span>
         </Link>
         {!auth.isGuest && !auth.isLoading ? (
           <div className="flex min-w-0 items-center gap-3">
-            <span className="hidden max-w-64 truncate text-sm text-slate-400 sm:block">{auth.email ?? auth.displayName}</span>
-            <button className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-white/30 hover:text-white" onClick={() => signOut()} type="button">Sign out</button>
+            <span className="hidden max-w-64 truncate text-sm text-[#a3a3a3] sm:block">{auth.email ?? auth.displayName}</span>
+            <button className="rounded-lg border border-[#303030] px-3 py-2 text-sm text-white transition hover:border-[#555]" onClick={() => signOut()} type="button">Sign out</button>
           </div>
         ) : null}
       </div>
@@ -206,30 +206,30 @@ function NewArtifactForm() {
   }
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02]">
+    <section className="overflow-hidden rounded-2xl border border-[#242424] bg-[#121212]">
       <div className="grid gap-8 p-6 md:grid-cols-[1fr_auto] md:items-end md:p-8">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-cyan-300">New artifact</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#de5e1e]">New artifact</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Publish an HTML file</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Artifacts expire after three days by default, freeing their storage automatically. Owners and workspace viewers can open every artifact; additional recipients can be added per artifact.</p>
-          <p className="mt-2 text-xs text-slate-500">Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
+          <p className="mt-2 text-sm leading-6 text-[#a3a3a3]">Artifacts expire after three days by default, freeing their storage automatically. Owners and workspace viewers can open every artifact; additional recipients can be added per artifact.</p>
+          <p className="mt-2 text-xs text-[#737373]">Maximum {formatBytes(MAX_ARTIFACT_BYTES)} per artifact; {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)} workspace HTML budget.</p>
         </div>
         <form className="grid min-w-0 gap-3 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
-          <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+          <label className="grid gap-1.5 text-xs font-medium text-[#a3a3a3]">
             Title (optional)
-            <input className="h-11 rounded-xl border border-white/10 bg-slate-950/70 px-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/70" name="title" placeholder="Architecture review" />
+            <input className="h-11 rounded-lg border border-[#303030] bg-[#0b0b0b] px-3 text-sm text-white outline-none transition placeholder:text-[#555] focus:border-[#de5e1e]" name="title" placeholder="Architecture review" />
           </label>
-          <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+          <label className="grid gap-1.5 text-xs font-medium text-[#a3a3a3]">
             HTML file
-            <input accept=".html,.htm,text/html" className="h-11 max-w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-300 file:mr-3 file:border-0 file:bg-transparent file:text-cyan-300" name="file" required type="file" />
+            <input accept=".html,.htm,text/html" className="h-11 max-w-full rounded-lg border border-[#303030] bg-[#0b0b0b] px-3 py-2 text-xs text-[#d4d4d4] file:mr-3 file:border-0 file:bg-transparent file:text-[#de5e1e]" name="file" required type="file" />
           </label>
-          <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+          <label className="grid gap-1.5 text-xs font-medium text-[#a3a3a3]">
             Expires in
-            <select className="h-11 rounded-xl border border-white/10 bg-slate-950/70 px-3 text-sm text-white outline-none focus:border-cyan-400/70" defaultValue={String(DEFAULT_EXPIRATION_SECONDS)} name="expiresInSeconds">
+            <select className="h-11 rounded-lg border border-[#303030] bg-[#0b0b0b] px-3 text-sm text-white outline-none focus:border-[#de5e1e]" defaultValue={String(DEFAULT_EXPIRATION_SECONDS)} name="expiresInSeconds">
               {EXPIRATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <button className="h-11 self-end rounded-xl bg-cyan-300 px-5 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-60" disabled={busy} type="submit">{busy ? "Publishing…" : "Publish"}</button>
+          <button className="h-11 self-end rounded-lg bg-[#de5e1e] px-5 text-sm font-bold text-white transition hover:bg-[#ed7134] disabled:cursor-wait disabled:opacity-60" disabled={busy} type="submit">{busy ? "Publishing…" : "Publish"}</button>
         </form>
       </div>
       {error ? <p className="border-t border-red-400/20 bg-red-400/10 px-6 py-3 text-sm text-red-200 md:px-8">{error}</p> : null}
@@ -300,38 +300,38 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
   }
 
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 transition hover:border-white/20">
+    <article className="rounded-xl border border-[#242424] bg-[#121212] p-5 transition hover:border-[#3a3a3a]">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <Link className="block truncate text-lg font-semibold text-white hover:text-cyan-200" to={artifactHref(artifact.slug)}>{artifact.title}</Link>
-          <p className="mt-1 font-mono text-xs text-slate-500">{formatBytes(Number(artifact.sizeBytes))} · updated {formatDate(artifact.updatedAt)}</p>
-          <p className="mt-1 font-mono text-xs text-amber-200/70">{expirationLabel(artifact.expiresAt)}</p>
+          <Link className="block truncate text-lg font-semibold text-white hover:text-[#ed7134]" to={artifactHref(artifact.slug)}>{artifact.title}</Link>
+          <p className="mt-1 font-mono text-xs text-[#737373]">{formatBytes(Number(artifact.sizeBytes))} · updated {formatDate(artifact.updatedAt)}</p>
+          <p className="mt-1 font-mono text-xs text-[#b8b8b8]">{expirationLabel(artifact.expiresAt)}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.workspaceViewerCount || artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-cyan-300/10 text-cyan-200" : "bg-white/5 text-slate-400"}`}>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${artifact.isPublic ? "bg-emerald-300/10 text-emerald-200" : artifact.workspaceViewerCount || artifact.sharedWith.length || artifact.sharedDomains.length ? "bg-[#de5e1e]/15 text-[#f38a55]" : "bg-white/5 text-[#a3a3a3]"}`}>
           {accessLabel(artifact)}
         </span>
       </div>
 
       <div className="mt-5 grid gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Link className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100" to={artifactHref(artifact.slug)}>Open & manage access</Link>
-          <button className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-white/30" onClick={() => void navigator.clipboard.writeText(url)} type="button">Copy link</button>
-          <label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-white/30">
+          <Link className="rounded-lg bg-[#de5e1e] px-3 py-2 text-xs font-semibold text-white hover:bg-[#ed7134]" to={artifactHref(artifact.slug)}>Open & manage access</Link>
+          <button className="rounded-lg border border-[#303030] px-3 py-2 text-xs font-medium text-white hover:border-[#555]" onClick={() => void navigator.clipboard.writeText(url)} type="button">Copy link</button>
+          <label className="cursor-pointer rounded-lg border border-[#303030] px-3 py-2 text-xs font-medium text-white hover:border-[#555]">
             Replace HTML
             <input accept=".html,.htm,text/html" className="hidden" disabled={busy} onChange={(event) => void replace(event.currentTarget.files?.[0])} type="file" />
           </label>
-          <button className="ml-auto rounded-lg px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-400/10 disabled:opacity-50" disabled={busy} onClick={() => void remove()} type="button">Delete</button>
+          <button className="rounded-lg px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-400/10 disabled:opacity-50 sm:ml-auto" disabled={busy} onClick={() => void remove()} type="button">Delete</button>
         </div>
-        <div className="flex flex-wrap items-end gap-2 border-t border-white/[0.07] pt-3">
-          <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+        <div className="flex flex-wrap items-end gap-2 border-t border-[#242424] pt-3">
+          <label className="grid gap-1 text-[11px] font-medium text-[#737373]">
             New lifetime (also used by Replace HTML)
-            <select className="h-9 rounded-lg border border-white/10 bg-slate-950 px-3 text-xs text-slate-300 outline-none focus:border-cyan-400/70" disabled={busy} onChange={(event) => setExpiresIn(event.currentTarget.value)} value={expiresIn}>
+            <select className="h-9 rounded-lg border border-[#303030] bg-[#0b0b0b] px-3 text-xs text-[#d4d4d4] outline-none focus:border-[#de5e1e]" disabled={busy} onChange={(event) => setExpiresIn(event.currentTarget.value)} value={expiresIn}>
               {EXPIRATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <button className="h-9 rounded-lg border border-white/10 px-3 text-xs font-medium text-slate-300 hover:border-white/30 disabled:opacity-50" disabled={busy} onClick={() => void applyExpiration()} type="button">Apply now</button>
+          <button className="h-9 rounded-lg border border-[#303030] px-3 text-xs font-medium text-white hover:border-[#555] disabled:opacity-50" disabled={busy} onClick={() => void applyExpiration()} type="button">Apply now</button>
         </div>
-        {status ? <p className="text-xs text-slate-400">{status}</p> : null}
+        {status ? <p className="text-xs text-[#a3a3a3]">{status}</p> : null}
       </div>
     </article>
   );
@@ -351,23 +351,23 @@ function OwnerDashboard() {
     <main className="mx-auto max-w-6xl px-6 py-10">
       <NewArtifactForm />
       <section className="mt-10">
-        <div className="mb-5 flex items-end justify-between gap-4">
+        <div className="mb-5 flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-end sm:gap-4">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-slate-500">Library</p>
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#de5e1e]">Library</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">Published artifacts</h1>
           </div>
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-[#737373]">
             {artifacts?.length ?? 0} total · {formatBytes(usedBytes)} of {formatBytes(MAX_TOTAL_ARTIFACT_BYTES)}
           </span>
         </div>
         {!artifacts ? (
-          <div className="rounded-2xl border border-white/10 p-8 text-center text-slate-500">Loading artifacts…</div>
+          <div className="rounded-xl border border-[#242424] p-8 text-center text-[#737373]">Loading artifacts…</div>
         ) : artifacts.length ? (
           <div className="grid gap-4 lg:grid-cols-2">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} />)}</div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-white/15 p-12 text-center">
-            <p className="text-slate-300">No artifacts yet.</p>
-            <p className="mt-1 text-sm text-slate-600">Publish an HTML file above or use the automation script.</p>
+          <div className="rounded-xl border border-dashed border-[#303030] p-12 text-center">
+            <p className="text-[#d4d4d4]">No artifacts yet.</p>
+            <p className="mt-1 text-sm text-[#737373]">Publish an HTML file above or use the automation script.</p>
           </div>
         )}
       </section>
@@ -378,11 +378,11 @@ function OwnerDashboard() {
 function NonOwnerHome({ isWorkspaceViewer }: { isWorkspaceViewer: boolean }) {
   return (
     <main className="mx-auto max-w-2xl px-6 py-24 text-center">
-      <p className="font-mono text-xs uppercase tracking-[0.22em] text-cyan-300">Signed in</p>
+      <p className="font-mono text-xs uppercase tracking-[0.22em] text-[#de5e1e]">Signed in</p>
       <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white">
         {isWorkspaceViewer ? "Workspace viewer access is active." : "Open the link that was shared with you."}
       </h1>
-      <p className="mt-5 leading-7 text-slate-400">
+      <p className="mt-5 leading-7 text-[#a3a3a3]">
         {isWorkspaceViewer
           ? "You can open every artifact link in this workspace, without management access."
           : "Additional access is granted per artifact and verified Google email."}
@@ -878,8 +878,7 @@ function AppContent() {
   }, [isArtifactRoute]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-300 selection:text-slate-950">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(59,130,246,0.08),transparent_28%)]" />
+    <div className="min-h-screen bg-[#0b0b0b] text-[#f5f5f5] selection:bg-[#de5e1e] selection:text-white">
       <div className="relative">
         {isArtifactRoute ? null : <AppHeader />}
         <Routes>
@@ -888,7 +887,7 @@ function AppContent() {
             path="/"
           />
           <Route element={<ArtifactPage />} path="/a/:slug" />
-          <Route element={<main className="mx-auto max-w-xl px-6 py-24 text-center"><h1 className="text-4xl font-semibold text-white">Not found</h1><Link className="mt-5 inline-block text-cyan-300 hover:text-cyan-200" to="/">Back home</Link></main>} path="*" />
+          <Route element={<main className="mx-auto max-w-xl px-6 py-24 text-center"><h1 className="text-4xl font-semibold text-white">Not found</h1><Link className="mt-5 inline-block text-[#de5e1e] hover:text-[#ed7134]" to="/">Back home</Link></main>} path="*" />
         </Routes>
       </div>
     </div>
