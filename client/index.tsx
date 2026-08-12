@@ -501,20 +501,28 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
     }
   }
 
+  const accessDescription = `Access · ${accessLabel({
+    isPublic,
+    sharedWith: emails,
+    sharedDomains: domains,
+    workspaceViewerCount: artifact.workspaceViewerEmails.length
+  })}`;
+
   return (
     <div className="relative">
       <button
+        aria-label={accessDescription}
         aria-expanded={open}
-        className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-white/30"
+        className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-md border border-white/10 text-xs leading-4 text-white hover:border-white/30 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5"
         onClick={() => setOpen((value) => !value)}
+        title={accessDescription}
         type="button"
       >
-        Access · {accessLabel({
-          isPublic,
-          sharedWith: emails,
-          sharedDomains: domains,
-          workspaceViewerCount: artifact.workspaceViewerEmails.length
-        })}
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
+          <rect height="7.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" width="10.5" x="4.75" y="8.25" />
+          <path d="M7 8.25V6a3 3 0 0 1 6 0v2.25" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+        </svg>
+        <span className="hidden sm:inline">{accessDescription}</span>
       </button>
       {open ? (
         <div className="absolute right-0 top-[calc(100%+0.6rem)] z-30 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-white/15 bg-slate-950 p-5 text-left shadow-2xl shadow-black/50" role="dialog" aria-label="Artifact access settings">
@@ -527,7 +535,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
           </div>
 
           <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3">
-            <input checked={isPublic} className="mt-0.5 h-4 w-4 accent-cyan-300" onChange={(event) => setIsPublic(event.currentTarget.checked)} type="checkbox" />
+            <input checked={isPublic} className="mt-0.5 h-4 w-4 accent-[#de5e1e]" onChange={(event) => setIsPublic(event.currentTarget.checked)} type="checkbox" />
             <span>
               <span className="block text-sm font-medium text-white">Public link</span>
               <span className="mt-0.5 block text-xs leading-5 text-slate-500">Anyone with the link can view without signing in.</span>
@@ -554,7 +562,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
             <label className="text-xs font-medium text-slate-400" htmlFor="artifact-access-email">Additional people</label>
             <form className="mt-1.5 flex gap-2" onSubmit={(event) => addEmail(event)}>
               <input
-                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/60"
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-[#de5e1e]/60"
                 id="artifact-access-email"
                 list="artifact-known-emails"
                 onInput={(event) => setEmailInput(event.currentTarget.value)}
@@ -583,7 +591,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
             <label className="text-xs font-medium text-slate-400" htmlFor="artifact-access-domain">Domains</label>
             <form className="mt-1.5 flex gap-2" onSubmit={(event) => addDomain(event)}>
               <input
-                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/60"
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-[#de5e1e]/60"
                 id="artifact-access-domain"
                 onInput={(event) => setDomainInput(event.currentTarget.value)}
                 placeholder="example.com"
@@ -605,7 +613,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
 
           <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
             <p className="text-xs text-slate-500">{status}</p>
-            <button className="rounded-lg bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 disabled:opacity-50" disabled={busy} onClick={() => void save()} type="button">{busy ? "Saving…" : "Save access"}</button>
+            <button className="rounded-lg bg-[#de5e1e] px-4 py-2 text-xs font-bold text-[#0b0b0b] hover:bg-[#ed7134] disabled:opacity-50" disabled={busy} onClick={() => void save()} type="button">{busy ? "Saving…" : "Save access"}</button>
           </div>
         </div>
       ) : null}
@@ -728,19 +736,81 @@ function ArtifactFrame({ slug }: { slug: string }) {
 
   return (
     <main className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-xl">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link aria-label="Back to artifacts" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 text-lg text-slate-300 transition hover:border-white/30 hover:text-white" to="/">←</Link>
-          <div className="min-w-0">
-            <h1 className="truncate font-semibold text-white">{artifact.title}</h1>
-            <p className="font-mono text-[11px] text-slate-500">{formatBytes(artifact.sizeBytes)} · {expirationLabel(artifact.expiresAt)} · sandboxed preview</p>
+      <header className="relative z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[#242424] bg-[#0b0b0b] px-2 py-1.5 sm:px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <Link aria-label="Back to artifacts" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-white transition hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#de5e1e]" to="/">
+            <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
+              <path d="m12.5 15-5-5 5-5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" />
+            </svg>
+          </Link>
+          <div className="relative flex min-w-0 items-center gap-1">
+            <h1 className="min-w-0 truncate text-sm font-semibold leading-5 text-white">{artifact.title}</h1>
+            <details className="static shrink-0">
+              <summary
+                aria-label="Artifact information"
+                className="grid h-6 w-6 cursor-pointer list-none place-items-center rounded-md text-white hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#de5e1e] [&::-webkit-details-marker]:hidden"
+                title="Artifact information"
+              >
+                <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 20 20">
+                  <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M10 9v4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+                  <circle cx="10" cy="6.5" fill="currentColor" r=".8" />
+                </svg>
+              </summary>
+              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-40 w-max rounded-md border border-white/15 bg-[#161616] px-3 py-2 font-mono text-[11px] leading-5 text-slate-300 shadow-xl shadow-black/50">
+                <p className="whitespace-nowrap">{formatBytes(artifact.sizeBytes)}</p>
+                <p className="whitespace-nowrap">{expirationLabel(artifact.expiresAt)}</p>
+              </div>
+            </details>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {artifact.canManage ? <AccessControl artifact={artifact} /> : null}
-          <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-white/30" onClick={() => void copySource()} type="button">{copied ? "Copied" : "Copy source"}</button>
-          <a className="rounded-lg bg-cyan-300 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200" download={`${artifact.slug}.html`} href={downloadUrl}>Download HTML</a>
-          {!auth.isGuest ? <button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:border-white/30 hover:text-white" onClick={() => signOut()} type="button">Sign out</button> : null}
+          <button
+            aria-label={copied ? "Source copied" : "Copy source"}
+            className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-md border border-white/10 text-xs leading-4 text-white hover:border-white/30 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5"
+            onClick={() => void copySource()}
+            title={copied ? "Source copied" : "Copy source"}
+            type="button"
+          >
+            {copied ? (
+              <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
+                <path d="m4.75 10.25 3.25 3.25 7.25-7.25" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
+                <rect height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5" width="8" x="7" y="7" />
+                <path d="M12.5 7V5.5A1.5 1.5 0 0 0 11 4H5.5A1.5 1.5 0 0 0 4 5.5V12A1.5 1.5 0 0 0 5.5 13.5H7" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+              </svg>
+            )}
+            <span className="hidden sm:inline">{copied ? "Copied" : "Copy source"}</span>
+          </button>
+          <a
+            aria-label="Download HTML"
+            className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-md bg-[#de5e1e] text-xs font-bold leading-4 text-white hover:bg-[#ed7134] sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5"
+            download={`${artifact.slug}.html`}
+            href={downloadUrl}
+            title="Download HTML"
+          >
+            <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
+              <path d="M10 3.75v8.5m0 0 3.25-3.25M10 12.25 6.75 9M4.5 14v1.25c0 .55.45 1 1 1h9c.55 0 1-.45 1-1V14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+            </svg>
+            <span className="hidden sm:inline">Download HTML</span>
+          </a>
+          {!auth.isGuest ? (
+            <button
+              aria-label="Sign out"
+              className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-md border border-white/10 text-xs leading-4 text-white hover:border-white/30 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5"
+              onClick={() => signOut()}
+              title="Sign out"
+              type="button"
+            >
+              <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
+                <path d="M8 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8m3-3 3-3m0 0-3-3m3 3H7.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+              </svg>
+              <span className="hidden sm:inline">Sign out</span>
+            </button>
+          ) : null}
         </div>
       </header>
       <iframe
