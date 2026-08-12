@@ -260,6 +260,6 @@ Lakebed local state resets when the dev process restarts. Real Google sign-in ac
 
 ## How it works
 
-The project is a Lakebed v0 capsule. Lakebed supplies first-party Google authentication, transactional storage, and hosting. Artifact HTML is split into database-safe chunks. Owner, workspace-viewer, and recipient invitations bind to durable Lakebed user IDs on first matching sign-in. HTML is rendered with `srcDoc` in a sandboxed iframe without `allow-same-origin`.
+The project is a Lakebed v0 capsule. Lakebed supplies first-party Google authentication, transactional storage, and hosting. Artifact HTML is split into database-safe chunks. Owner, workspace-viewer, and recipient invitations bind to durable Lakebed user IDs on first matching sign-in. HTML is rendered with `srcDoc` in a sandboxed iframe without `allow-same-origin`. The preview injects an `about:srcdoc` base URL at render time so fragment links stay within the artifact; stored and downloaded HTML remains unchanged.
 
 Codex Artifacts is an independent project and is not affiliated with or endorsed by OpenAI or Anthropic.

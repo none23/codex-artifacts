@@ -28,6 +28,7 @@ import {
 const client = createClient<typeof app>();
 const DEFAULT_DOCUMENT_TITLE = "Codex Artifacts";
 const KNOWN_EMAILS_KEY = "codex-artifacts:known-emails";
+const SRCDOC_BASE = '<base href="about:srcdoc">';
 const EXPIRATION_OPTIONS = [
   { label: "1 hour", value: "3600" },
   { label: "1 day", value: "86400" },
@@ -64,6 +65,28 @@ function slugFromTitle(title: string): string {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function withSrcdocBase(html: string): string {
+  const head = /<head(?:\s[^>]*)?>/i.exec(html);
+  if (head) {
+    const insertionPoint = head.index + head[0].length;
+    return `${html.slice(0, insertionPoint)}${SRCDOC_BASE}${html.slice(insertionPoint)}`;
+  }
+
+  const documentElement = /<html(?:\s[^>]*)?>/i.exec(html);
+  if (documentElement) {
+    const insertionPoint = documentElement.index + documentElement[0].length;
+    return `${html.slice(0, insertionPoint)}<head>${SRCDOC_BASE}</head>${html.slice(insertionPoint)}`;
+  }
+
+  const doctype = /<!doctype(?:\s[^>]*)?>/i.exec(html);
+  if (doctype) {
+    const insertionPoint = doctype.index + doctype[0].length;
+    return `${html.slice(0, insertionPoint)}<head>${SRCDOC_BASE}</head>${html.slice(insertionPoint)}`;
+  }
+
+  return `<head>${SRCDOC_BASE}</head>${html}`;
 }
 
 function readKnownEmails(): string[] {
@@ -613,6 +636,10 @@ function ArtifactFrame({ slug }: { slug: string }) {
     if (!artifact) return "";
     return URL.createObjectURL(new Blob([artifact.html], { type: "text/html;charset=utf-8" }));
   }, [artifact?.html]);
+  const previewHtml = useMemo(
+    () => artifact ? withSrcdocBase(artifact.html) : "",
+    [artifact?.html]
+  );
 
   useEffect(() => {
     if (
@@ -720,7 +747,7 @@ function ArtifactFrame({ slug }: { slug: string }) {
         className="min-h-[700px] flex-1 border-0 bg-white"
         referrerPolicy="no-referrer"
         sandbox="allow-downloads allow-forms allow-modals allow-popups allow-scripts"
-        srcDoc={artifact.html}
+        srcDoc={previewHtml}
         title={artifact.title}
       />
     </main>
