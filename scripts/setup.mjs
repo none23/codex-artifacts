@@ -280,7 +280,7 @@ async function ensureDatabase(existingDatabaseId) {
   );
   const existing = databaseIdFromList(list());
   if (existing) return existing;
-  runWrangler(["d1", "create", DATABASE_NAME, "--location", "eeur"]);
+  runWrangler(["d1", "create", DATABASE_NAME]);
   const created = databaseIdFromList(list());
   if (!created) throw new Error("Wrangler created D1 but did not return its database ID.");
   return created;

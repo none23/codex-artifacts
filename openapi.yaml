@@ -7,7 +7,7 @@ info:
     name: MIT
     identifier: MIT
 servers:
-  - url: https://your-artifacts.lakebed.app
+  - url: https://codex-artifacts.your-account.workers.dev
 paths:
   /api/status:
     get:
@@ -54,7 +54,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublishResponse"
         "400":
-          description: Invalid artifact input or exhausted state capacity.
+          description: Invalid artifact input or exhausted workspace capacity.
           content:
             application/json:
               schema:

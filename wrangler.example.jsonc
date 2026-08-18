@@ -19,7 +19,8 @@
   ],
   "vars": {
     "OWNER_EMAILS": "owner@example.com",
-    "WORKSPACE_VIEWER_EMAILS": ""
+    "WORKSPACE_VIEWER_EMAILS": "",
+    "BETTER_AUTH_URL": "http://localhost:5173"
   },
   "triggers": {
     "crons": ["17 * * * *"]

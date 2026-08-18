@@ -1,40 +1,57 @@
 # Codex Artifacts
 
-Codex Artifacts is a small service for publishing self-contained HTML files as private, shareable web pages. It gives coding agents a place to publish reports, dashboards, plans, walkthroughs, and other visual documents, while you control who can view them.
+Codex Artifacts publishes self-contained HTML files as private, shareable web pages. Coding agents can publish reports, dashboards, plans, and walkthroughs while the deployment owner controls who may open them.
 
-You run Codex Artifacts in your own Lakebed account. Your deployment has its own data, owners, URL, and publishing token; there is no shared hosted service or credential.
+Each installation runs in the owner's Cloudflare account. It has separate data, credentials, and a publishing token. There is no shared hosted service.
 
-**[Explore the public, interactive capabilities demo →](https://codex-artifacts.lakebed.app/?artifact=capabilities-demo)**
+**[Explore the public capabilities demo](https://codex-artifacts.lakebed.app/?artifact=capabilities-demo)**
 
-## Set up your own service
+## Set up your service
 
 You need:
 
-- Node.js 20 or later
-- A Google account
-- A free [Lakebed](https://lakebed.dev) account
+- Node.js 20.19 or later
+- A free Cloudflare account
+- A Google OAuth web client
 
-### 1. Clone, install, and deploy
+### 1. Create the Google OAuth client
 
-Replace `you@example.com` with the Google email you will use to administer the
-service. Optionally add read-only workspace viewers who should be able to open
-every artifact:
+Create a web OAuth client in Google Cloud Console. Add this local redirect URI:
+
+```text
+http://localhost:5173/api/auth/callback/google
+```
+
+Copy the client ID and client secret. Setup will print the production redirect URI after the first deployment. Add that URI to the same Google client before signing in.
+
+If you already know the custom domain, add `https://your-domain/api/auth/callback/google` now and pass the domain to setup with `--domain`.
+
+### 2. Clone and deploy
 
 ```sh
 git clone https://github.com/none23/codex-artifacts.git
 cd codex-artifacts
 npm ci
+
+export GOOGLE_CLIENT_ID="your-client-id"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
 npm run setup -- --owner you@example.com \
   --viewer viewer@example.com,another-viewer@example.com
 ```
 
-Follow the Lakebed sign-in prompt if one appears. The command creates your deployment, checks that it is healthy, and prints its service URL.
+Wrangler opens Cloudflare login if needed. Setup then creates D1 storage, applies migrations, deploys the Worker, and prints the service URL and Google callback URL.
 
-### 2. Sign in as the owner
+To use a custom domain already managed by Cloudflare:
 
-Open the printed service URL and choose **Sign in with Google**. Use the same email you passed to `--owner`. This first sign-in accepts the owner invitation and gives you access to the management interface.
+```sh
+npm run setup -- --owner you@example.com --domain artifacts.example.com
+```
 
-### 3. Install the agent skill
+### 3. Finish Google configuration and sign in
+
+Add the printed production callback URL to the Google OAuth client. Open the service URL and choose **Sign in with Google**. The first matching sign-in accepts the owner invitation.
+
+### 4. Install the agent skill
 
 Link the included skill for Codex, Claude Code, or both:
 
@@ -50,154 +67,88 @@ ln -sfn "$REPO_DIR/skills/codex-artifacts" \
   "$HOME/.claude/skills/codex-artifacts"
 ```
 
-Start a new agent session after installing the skill so it is discovered.
+Start a new agent session after installing the skill.
 
-### 4. Publish your first artifact
+### 5. Publish an artifact
 
-From any project, ask your agent:
+Ask your agent:
 
 ```text
 Use codex-artifacts to create and publish a visual architecture report for this repository.
 ```
 
-The agent creates the HTML, publishes it to your deployment, and opens the
-private result in your browser. Owners and workspace viewers can open every
-artifact. Additional recipients can be granted access per artifact.
-
-You can also publish an existing HTML file directly from the Codex Artifacts repository:
+Or publish an existing file directly:
 
 ```sh
 node scripts/publish.mjs ./report.html --title "Architecture report"
 ```
 
-Your service is now ready to use. See the [public capabilities demo](https://codex-artifacts.lakebed.app/?artifact=capabilities-demo) for a view-only example of a published artifact.
-
-## Using Codex Artifacts
-
-The service provides:
-
-- Google sign-in with durable Lakebed identity bindings
-- Private-by-default artifact publishing
-- Deployment-wide read-only workspace viewers
-- Per-artifact invitations by exact email or email domain
-- Optional public links
-- A browser UI for uploading, replacing, downloading, and deleting artifacts
-- A shared Codex and Claude Code skill for agent-driven publishing
-- A command-line publisher that can update an existing artifact URL
-- Three-day artifact expiration by default, with per-publish overrides
-- Sandboxed HTML previews without `allow-same-origin`
-
-### Publishing options
-
-Useful options:
+## Publishing options
 
 ```sh
 --slug architecture-report        # Reuse the URL on future updates
 --share person@example.com        # Set additional exact-email recipients
 --expires-in 1h                   # Override the default three-day lifetime
---expires-in never                # Keep the artifact until it is deleted
+--expires-in never                # Keep the artifact until deletion
 --public                          # Allow anyone with the link to view
 --no-open                         # Do not open the result in a browser
 -- --option-like-name.html        # Publish a filename beginning with "-"
 ```
 
-Workspace viewers always retain access and are independent of `--share`. On
-update, supplying `--share` replaces only the artifact's additional exact-email
-invitation list; omitting it preserves existing access. Omitting `--public` on
-update preserves the public setting. New artifacts expire after three days, and
-every republish resets that three-day timer unless `--expires-in` supplies a
-duration or `never`. Expired artifacts stop being readable immediately and are
-removed when the owner next opens the library or publishes an artifact. Existing
-artifacts from deployments upgraded to this version remain non-expiring until
-their next update. The publisher refuses to combine a
-process-level URL override with a token loaded from the configuration file;
-override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
+Workspace viewers always retain access. On update, `--share` replaces only the artifact's additional exact-email list. Omitting it preserves existing access. Omitting `--public` preserves the current public setting. Republishing resets the three-day expiration unless `--expires-in` supplies another duration or `never`.
 
-If the skill is copied away from this repository instead of linked, set `CODEX_ARTIFACTS_ENV` to the absolute path of `.env.lakebed.server`.
+The publisher rejects a process-level URL override paired with a token from the saved configuration. Override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
 
-## What setup configures
-
-The setup command:
-
-1. Creates a random 256-bit publishing token.
-2. Writes the ignored `.env.lakebed.server` with mode `0600`.
-3. Opens Lakebed developer login if needed.
-4. Creates an owned deployment or updates the deployment already bound in `lakebed.json`.
-5. Saves the deployment URL and verifies `/api/status`.
-
-Re-run `npm run setup` after pulling an update. Existing owners, workspace
-viewers, secrets, and a configured custom URL are preserved unless you
-explicitly replace them with `--owner`, `--viewer`, or `--clear-viewers`.
+If the skill is copied away from this repository instead of linked, set `CODEX_ARTIFACTS_ENV` to the absolute path of `.env.cloudflare.server`.
 
 ## Identity and access
 
-Owner, workspace-viewer, and per-artifact recipient emails are invitations, not
-permanent authorization keys.
+Owner, workspace-viewer, and per-artifact recipient emails are invitations. They are not permanent authorization keys.
 
-- The first matching verified Google sign-in accepts an invitation and binds it to the account's immutable Lakebed user ID.
-- Later requests authorize the bound user ID rather than trusting current profile email.
-- Removing an owner invitation from `OWNER_EMAILS` and redeploying revokes that binding.
-- Removing a workspace viewer invitation from `WORKSPACE_VIEWER_EMAILS` and
-  redeploying revokes read access across the workspace.
-- Removing an artifact email or domain rule immediately invalidates and removes grants created from that rule.
-- Every configured owner is a deployment administrator and can manage every artifact.
-- Every configured workspace viewer can open every existing and future artifact
-  but cannot publish, delete, or change access.
-- Per-artifact recipients can open only artifacts shared with their exact email
-  or domain.
+- Better Auth verifies Google sign-in and assigns an immutable user ID.
+- The first matching sign-in binds an invitation to that user ID.
+- Later requests authorize the bound ID and check that its invitation still exists.
+- Removing an owner or workspace-viewer email and redeploying revokes its access.
+- Removing an artifact email or domain rule invalidates grants created from it.
+- Owners can manage every artifact. Workspace viewers can read every artifact but cannot change them.
+- Per-artifact recipients can read only artifacts shared with their exact email or domain.
 
-If an address appears in both `OWNER_EMAILS` and `WORKSPACE_VIEWER_EMAILS`,
-owner access takes precedence.
+Owner access wins when an address appears in both deployment lists.
 
-Domain invitations are broad. Do not add public mail domains such as `gmail.com`; every matching signed-in account could accept access. Prefer exact-email invitations for sensitive artifacts.
-
-## Manual setup
-
-The setup command is recommended, but the equivalent manual flow is:
-
-```sh
-cp .env.lakebed.server.example .env.lakebed.server
-chmod 600 .env.lakebed.server
-```
-
-Set:
-
-```dotenv
-OWNER_EMAILS=you@example.com
-WORKSPACE_VIEWER_EMAILS=viewer@example.com,another-viewer@example.com
-PUBLISH_TOKEN=replace-with-a-long-random-secret
-ARTIFACTS_URL=https://your-artifacts.lakebed.app
-```
-
-Generate the token with `openssl rand -hex 32`. Authenticate before the first deployment so Lakebed creates an owned app:
-
-```sh
-npm exec lakebed -- auth login
-npm run deploy
-```
-
-Set `ARTIFACTS_URL` to the deployed or custom URL. `lakebed.json` is intentionally ignored in this upstream repository so a clone never targets the maintainer's deployment; Lakebed creates your local binding automatically.
+Domain invitations are broad. A rule such as `gmail.com` would admit every matching signed-in account. Prefer exact-email invitations for sensitive artifacts.
 
 ## Configuration
 
+Setup writes these ignored files:
+
+- `.env.cloudflare.server` contains the publisher profile and saved setup values.
+- `.env.cloudflare.secrets` contains Worker secrets uploaded during deployment.
+- `.dev.vars` contains secrets for local development.
+- `wrangler.jsonc` binds this clone to its D1 database and deployment settings.
+
+The important values are:
+
 | Variable | Purpose |
 | --- | --- |
-| `OWNER_EMAILS` | Comma-separated pending/current owner invitations |
-| `WORKSPACE_VIEWER_EMAILS` | Comma-separated read-only viewers of every artifact |
-| `PUBLISH_TOKEN` | Server-side automation secret |
-| `ARTIFACTS_URL` | Publisher destination in the local configuration file |
+| `OWNER_EMAILS` | Comma-separated owner invitations |
+| `WORKSPACE_VIEWER_EMAILS` | Read-only viewers of every artifact |
+| `PUBLISH_TOKEN` | Deployment-wide automation authority |
+| `ARTIFACTS_URL` | Publisher destination saved locally |
+| `BETTER_AUTH_SECRET` | Better Auth session secret |
+| `GOOGLE_CLIENT_ID` | Google OAuth web client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth web client secret |
 | `ARTIFACTS_PUBLISH_TOKEN` | Process-level publisher token override |
-| `ARTIFACTS_AUTO_OPEN=0` | Disables opening newly published artifacts |
-| `CODEX_ARTIFACTS_ENV` | Optional absolute publisher environment-file path |
-| `LAKEBED_TOKEN` | Optional Lakebed deployment credential for automation |
+| `ARTIFACTS_AUTO_OPEN=0` | Disable opening a published artifact |
+| `CODEX_ARTIFACTS_ENV` | Use another publisher configuration file |
+| `CLOUDFLARE_API_TOKEN` | Optional non-interactive Wrangler authentication |
 
-Never commit `.env.lakebed.server`, `.lakebed/`, `lakebed.json`, or publishing/deployment tokens.
+Never commit the ignored configuration, Cloudflare credentials, publishing tokens, database exports, or private artifact URLs.
 
-The owner automation contract is documented in [openapi.yaml](openapi.yaml).
+The automation contract remains documented in [openapi.yaml](openapi.yaml).
 
 ## Operations
 
-### Update safely
+### Update
 
 ```sh
 git pull --ff-only
@@ -205,61 +156,80 @@ npm run check
 npm run setup
 ```
 
-`npm run setup` updates the bound deployment only after tests/build are run separately. For a controlled rollback, check out the last known-good revision, run `npm run check`, then `npm run deploy`.
+Setup preserves existing owners, viewers, secrets, database, URL, and custom domain unless command options replace them. It applies pending migrations before deployment.
 
-### Back up data
+### Back up D1
 
-Read the deploy ID from the ignored `lakebed.json`, then export:
+```sh
+npx wrangler d1 export DB --remote \
+  --config wrangler.jsonc \
+  --output codex-artifacts-backup.sql
+```
+
+Keep exports private. They contain artifact HTML, identities, sessions, invitations, and access rules.
+
+### Migrate an existing Lakebed deployment
+
+Export Lakebed before removing its deployment:
 
 ```sh
 DEPLOY_ID="$(node -p "JSON.parse(require('fs').readFileSync('lakebed.json')).deployId")"
-npm exec lakebed -- db export "$DEPLOY_ID" --out codex-artifacts-backup.json
+npx lakebed@0.0.29 db export "$DEPLOY_ID" --out codex-artifacts-lakebed-backup.json
 ```
 
-Lakebed export is not a point-in-time snapshot during concurrent writes. Keep backups private: they contain artifact HTML, owner and workspace-viewer invitations, and per-artifact recipient access data.
+Deploy the Cloudflare version, then import:
 
-### Rotate the publisher token
+```sh
+npm run setup -- --owner you@example.com
+node scripts/import-lakebed.mjs codex-artifacts-lakebed-backup.json
+```
 
-Replace `PUBLISH_TOKEN` in `.env.lakebed.server` with a new 64-character hex value, keep the file at mode `0600`, and run `npm run deploy`. The publisher reads the same local file, so the old token stops working after deployment.
+The first setup run also needs the Google OAuth environment variables described above.
 
-### Change owners
+The importer preserves artifact IDs, slugs, HTML, timestamps, expiration, public settings, exact-email rules, and domain rules. It omits Lakebed identity bindings and accepted grants because those IDs have no meaning in Better Auth. Owners, viewers, and recipients reclaim access on their next Google sign-in.
 
-Update `OWNER_EMAILS` and run `npm run deploy`. Removing an email revokes its bound owner access. Adding an email creates a pending invitation that binds on that person's next sign-in.
+A `*.lakebed.app` URL cannot move to Cloudflare. Existing links keep working only when the Lakebed deployment already uses a custom domain that you transfer with `--domain`.
 
-### Change workspace viewers
+### Rotate secrets or change access lists
 
-Run `npm run setup -- --viewer one@example.com,two@example.com` to replace the
-read-only workspace viewer list, or use `--clear-viewers` to remove it. The
-change applies to every existing and future artifact. A newly added viewer must
-sign in with the matching verified Google email to bind the invitation.
+Edit `.env.cloudflare.server`, export any changed Google values if needed, then run `npm run setup`. To replace workspace viewers from the command line:
+
+```sh
+npm run setup -- --viewer one@example.com,two@example.com
+npm run setup -- --clear-viewers
+```
+
+Changing `PUBLISH_TOKEN` takes effect at deployment. Update any separate publisher configuration that copied the old token.
 
 ## Security and capacity
 
-Artifact HTML is untrusted. It runs in an iframe sandbox without `allow-same-origin` and cannot access the authenticated shell, but scripts, forms, popups, and outbound network requests are currently allowed inside the artifact. An artifact can transmit data embedded in its own HTML. Downloaded HTML is no longer sandboxed if you open it directly. Do not publish secrets, credentials, private source, or regulated data without reviewing the generated page.
+Artifact HTML is untrusted. The app renders it through `srcDoc` in an iframe sandbox without `allow-same-origin`. Scripts, forms, popups, downloads, and outbound requests are allowed inside the artifact. An artifact can transmit data embedded in its own HTML. Downloaded HTML is not sandboxed when opened directly.
 
-The publishing token is deployment-wide owner automation authority. Anyone holding it can create artifacts and replace an artifact whose slug they know. Keep it only on trusted owner machines; do not distribute it as a consumer credential.
+The publishing token has owner-level automation authority. Anyone holding it can create artifacts and replace an artifact whose slug they know.
 
-Lakebed currently limits capsule state to 1 MiB. This project limits one artifact to 512 KiB, individual chunks to 48 KiB, and total artifact HTML to 768 KiB, reserving the remaining state for metadata, access grants, and indexes. Treat the deployment as a small visual-document workspace, not general hosting. Delete superseded artifacts and monitor usage with Lakebed inspection tools.
+The service limits each artifact to 512 KiB and total artifact HTML to 400 MiB. A free D1 database allows 500 MB, leaving roughly 100 MB for auth data, access records, and indexes. Cloudflare's free plan also limits Worker requests and D1 operations. Monitor usage in the Cloudflare dashboard before production traffic approaches those ceilings.
 
-Expiration is enforced server-side. Because Lakebed v0 has no scheduled-job API,
-expired rows are reclaimed lazily during the next owner library visit or publish;
-they are excluded from reads and capacity calculations as soon as their timestamp
-passes.
-
-Public artifacts are subject to the [Lakebed Acceptable Use Policy](https://lakebed.dev/acceptable-use). The deployment owner is responsible for its published content and recipients.
+Reads reject expired artifacts immediately. An hourly Cron Trigger reclaims expired rows, and publishing also removes expired rows before checking capacity.
 
 ## Local development
 
+After setup has written `.dev.vars` and `wrangler.jsonc`:
+
 ```sh
-npm test
-npm run build
+npx wrangler d1 migrations apply DB --local --config wrangler.jsonc
 npm run dev
 ```
 
-Lakebed local state resets when the dev process restarts. Real Google sign-in accepts configured owner and artifact invitations; automation publishing continues to use `PUBLISH_TOKEN`.
+Run the full check before committing:
+
+```sh
+npm run check
+```
+
+Local D1 data persists under `.wrangler/`. Google sign-in needs the local callback URL listed on the OAuth client.
 
 ## How it works
 
-The project is a Lakebed v0 capsule. Lakebed supplies first-party Google authentication, transactional storage, and hosting. Artifact HTML is split into database-safe chunks. Owner, workspace-viewer, and recipient invitations bind to durable Lakebed user IDs on first matching sign-in. HTML is rendered with `srcDoc` in a sandboxed iframe without `allow-same-origin`. The preview injects an `about:srcdoc` base URL at render time so fragment links stay within the artifact; stored and downloaded HTML remains unchanged.
+Cloudflare Workers hosts the Hono API and Vite-built React app. Better Auth stores Google users and sessions in D1. D1 also stores artifact metadata, access rules, and HTML in one row so publication stays atomic. The browser talks to a typed internal client, while automation uses the stable bearer-token HTTP API. HTML previews inject an `about:srcdoc` base URL at render time so fragment links stay inside the artifact without changing stored or downloaded HTML.
 
-Codex Artifacts is an independent project and is not affiliated with or endorsed by OpenAI or Anthropic.
+Codex Artifacts is independent and is not affiliated with or endorsed by OpenAI or Anthropic.
