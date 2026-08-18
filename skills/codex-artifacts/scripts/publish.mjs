@@ -39,7 +39,7 @@ async function readConfiguration() {
   const scriptDirectory = dirname(fileURLToPath(import.meta.url));
   const envPath = process.env.CODEX_ARTIFACTS_ENV
     ? resolve(process.env.CODEX_ARTIFACTS_ENV)
-    : resolve(scriptDirectory, "../../../.env.lakebed.server");
+    : resolve(scriptDirectory, "../../../.env.cloudflare.server");
 
   try {
     return { path: envPath, values: parseEnv(await readFile(envPath, "utf8")) };

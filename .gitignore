@@ -3,6 +3,10 @@
 .env.lakebed.server.tmp-*
 lakebed.json
 .dev.vars
+.env.cloudflare.server
+.env.cloudflare.server.tmp-*
+.env.cloudflare.secrets
+.env.cloudflare.secrets.tmp-*
 .wrangler/
 wrangler.jsonc
 node_modules/

@@ -14,7 +14,7 @@ argument-hint: "[request or HTML file]"
 - Inline all assets; use no network requests or multiple routes.
 - Prefer exact references and measured facts. Do not duplicate viewer branding or controls; avoid repetitive cards, excessive centering, gratuitous gradients, and uniform rounding.
 - Keep UTF-8 below 512 KiB.
-- Remove unrequested secrets, credentials, private URLs, and personal data. Never expose publishing tokens or `.env.lakebed.server`.
+- Remove unrequested secrets, credentials, private URLs, and personal data. Never expose publishing tokens or `.env.cloudflare.server`.
 
 ## UI Design
 - Make sure there is sufficient contrast in the colors, so that texts stay readable and accessible
