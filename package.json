@@ -13,17 +13,18 @@
   },
   "type": "module",
   "scripts": {
-    "build": "lakebed build . --target anonymous",
-    "check": "npm run test && npm run build",
-    "dev": "lakebed dev",
-    "deploy": "lakebed deploy",
+    "build": "vite build",
+    "check": "npm run test && npm run typecheck && npm run build",
+    "dev": "vite dev",
+    "deploy": "npm run build && wrangler deploy --config dist/codex_artifacts/wrangler.json",
+    "preview": "vite preview",
     "setup": "node scripts/setup.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "better-auth": "1.7.1",
     "hono": "4.13.3",
-    "preact": "10.29.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "7.18.2"
@@ -31,10 +32,14 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.53.0",
     "@cloudflare/workers-types": "5.20260818.1",
-    "@preact/preset-vite": "2.10.6",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react-swc": "4.3.3",
+    "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.2.1",
-    "wrangler": "4.124.0",
-    "lakebed": "0.0.29"
+    "wrangler": "4.124.0"
   }
 }

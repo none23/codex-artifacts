@@ -1,6 +1,7 @@
 export const MAX_ARTIFACT_BYTES = 512 * 1024;
 export const MAX_CHUNK_BYTES = 48 * 1024;
-export const MAX_TOTAL_ARTIFACT_BYTES = 768 * 1024;
+// Leave room in a free 500 MB D1 database for auth records and indexes.
+export const MAX_TOTAL_ARTIFACT_BYTES = 400 * 1024 * 1024;
 export const MAX_SHARED_EMAILS = 50;
 export const MAX_SHARED_DOMAINS = 20;
 export const DEFAULT_EXPIRATION_SECONDS = 3 * 24 * 60 * 60;

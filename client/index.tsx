@@ -1,23 +1,20 @@
 import {
+  BrowserRouter as Router,
   Link,
   Route,
-  Router,
   Routes,
-  SignInWithGoogle,
-  createClient,
-  signOut,
-  useAuth,
   useLocation,
   useParams
-} from "lakebed/client";
-import { useEffect, useMemo, useState } from "preact/hooks";
-import type app from "../server";
+} from "react-router-dom";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { OwnedArtifact, ViewedArtifact } from "../shared/api";
+import { client } from "./api";
+import { SignInWithGoogle, signOut, useAuth } from "./auth";
 import {
   DEFAULT_EXPIRATION_SECONDS,
   MAX_ARTIFACT_BYTES,
   MAX_TOTAL_ARTIFACT_BYTES,
   artifactHref,
-  chunkHtml,
   cleanSlug,
   isValidDomain,
   isValidEmail,
@@ -25,7 +22,6 @@ import {
   normalizeEmail
 } from "../shared/config";
 
-const client = createClient<typeof app>();
 const DEFAULT_DOCUMENT_TITLE = "Codex Artifacts";
 const KNOWN_EMAILS_KEY = "codex-artifacts:known-emails";
 const SRCDOC_BASE = '<base href="about:srcdoc">';
@@ -171,7 +167,7 @@ function NewArtifactForm() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  async function submit(event: SubmitEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
@@ -192,7 +188,7 @@ function NewArtifactForm() {
       const result = await publishArtifact({
         title,
         slug,
-        chunks: chunkHtml(html),
+        html,
         expiresInSeconds: expirationValue(data.get("expiresInSeconds"))
       });
       const url = `${window.location.origin}${artifactHref(result.slug)}`;
@@ -243,8 +239,6 @@ function NewArtifactForm() {
   );
 }
 
-type OwnedArtifact = NonNullable<ReturnType<typeof client.useQuery<"ownedArtifacts">>>[number];
-
 function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
   const publishArtifact = client.useMutation("publishArtifact");
   const deleteArtifact = client.useMutation("deleteArtifact");
@@ -263,7 +257,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
         artifactId: artifact.id,
         title: artifact.title,
         slug: artifact.slug,
-        chunks: chunkHtml(await file.text()),
+        html: await file.text(),
         sharedWith: artifact.sharedWith,
         expiresInSeconds: expirationValue(expiresIn)
       });
@@ -437,8 +431,6 @@ function useAccessBootstrap() {
   return { viewer, state, error };
 }
 
-type ViewedArtifact = Exclude<ReturnType<typeof client.useQuery<"artifactBySlug">>, null | undefined>;
-
 function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
   const setArtifactAccess = client.useMutation("setArtifactAccess");
   const [open, setOpen] = useState(false);
@@ -451,7 +443,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function addEmail(event: SubmitEvent) {
+  function addEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const email = normalizeEmail(emailInput);
     if (!isValidEmail(email)) {
@@ -472,7 +464,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
     setStatus("");
   }
 
-  function addDomain(event: SubmitEvent) {
+  function addDomain(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const domain = normalizeDomain(domainInput);
     if (!isValidDomain(domain)) {
