@@ -2,5 +2,9 @@
 .env.lakebed.server
 .env.lakebed.server.tmp-*
 lakebed.json
+.dev.vars
+.wrangler/
+wrangler.jsonc
 node_modules/
+dist/
 codex-artifacts-backup*.json
