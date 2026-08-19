@@ -2,7 +2,7 @@
 
 ## Development
 
-Use Node.js 20.19 or later:
+Use Node.js 26.7 or later:
 
 ```sh
 npm ci

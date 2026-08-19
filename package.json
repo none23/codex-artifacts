@@ -9,7 +9,7 @@
     "url": "git+https://github.com/none23/codex-artifacts.git"
   },
   "engines": {
-    "node": ">=20.19"
+    "node": ">=26.7"
   },
   "type": "module",
   "scripts": {
