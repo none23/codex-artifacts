@@ -10,7 +10,7 @@ Each installation runs in the owner's Cloudflare account. It has separate data, 
 
 You need:
 
-- Node.js 20.19 or later
+- Node.js 26.7 or later
 - A free Cloudflare account
 - A Google OAuth web client
 
