@@ -195,7 +195,7 @@ npm run setup -- --viewer one@example.com,two@example.com
 npm run setup -- --clear-viewers
 ```
 
-Changing `PUBLISH_TOKEN` takes effect at deployment. Update any separate publisher configuration that copied the old token.
+Changing `PUBLISH_TOKEN` takes effect at deployment. Update any separate publisher configuration that copied the old token. If GitHub deployment is configured, replace the `CLOUDFLARE_WRANGLER_CONFIG` environment secret after `wrangler.jsonc` changes so later deployments retain the new access lists and routes.
 
 ## Security and capacity
 
