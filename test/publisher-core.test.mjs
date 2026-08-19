@@ -59,6 +59,23 @@ test("parses relative and never expiration settings", () => {
   assert.throws(() => parseExpiration("366d"), /between 1m and 365d/);
 });
 
+test("parses explicit access revocation without collapsing it into omission", () => {
+  const omitted = parseArguments(["report.html"]);
+  assert.equal(omitted.sharedWith, undefined);
+  assert.equal(omitted.sharedDomains, undefined);
+  assert.equal(omitted.isPublic, undefined);
+
+  const cleared = parseArguments([
+    "report.html",
+    "--clear-share",
+    "--clear-share-domain",
+    "--private"
+  ]);
+  assert.deepEqual(cleared.sharedWith, []);
+  assert.deepEqual(cleared.sharedDomains, []);
+  assert.equal(cleared.isPublic, false);
+});
+
 test("supports an option-like filename after the option terminator", () => {
   assert.equal(parseArguments(["--", "--report.html"]).file, "--report.html");
 });
@@ -77,6 +94,18 @@ test("rejects unknown options, duplicate scalar options, and missing values", ()
   assert.throws(
     () => parseArguments(["report.html", "--share-domain", "--public"]),
     /requires a value/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--share", "one@example.com", "--clear-share"]),
+    /cannot be combined/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--clear-share-domain", "--share-domain", "example.com"]),
+    /cannot be combined/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--public", "--private"]),
+    /Only one/
   );
 });
 

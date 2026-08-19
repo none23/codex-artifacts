@@ -16,7 +16,7 @@ const PUBLISH_TIMEOUT_MS = 30_000;
 
 function usage() {
   console.error(`Usage:
-  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--share-domain example.com] [--expires-in 3d|never] [--public] [--no-open]
+  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com | --clear-share] [--share-domain example.com | --clear-share-domain] [--expires-in 3d|never] [--public | --private] [--no-open]
 
 Behavior:
   New artifacts are private by default.
@@ -25,9 +25,11 @@ Behavior:
   respective lists on update.
   Reusing --slug updates the existing URL.
   Omitting either sharing option during an update preserves that list.
+  --clear-share and --clear-share-domain remove their respective lists.
   Artifacts expire in 3 days by default; every update resets that timer.
   --expires-in accepts durations such as 1h, 3d, or 2w, or never.
   --public makes the artifact accessible without sign-in.
+  --private requires sign-in and a matching access rule.
 
 Environment:
   ARTIFACTS_URL             Deployed app URL
@@ -108,14 +110,14 @@ async function main() {
     slug: args.slug,
     html
   };
-  if (args.sharedWith.length > 0) {
+  if (args.sharedWith !== undefined) {
     payload.sharedWith = args.sharedWith;
   }
-  if (args.sharedDomains.length > 0) {
+  if (args.sharedDomains !== undefined) {
     payload.sharedDomains = args.sharedDomains;
   }
-  if (args.isPublic) {
-    payload.isPublic = true;
+  if (args.isPublic !== undefined) {
+    payload.isPublic = args.isPublic;
   }
   if (args.expiresInSeconds !== undefined) {
     payload.expiresInSeconds = args.expiresInSeconds;
@@ -149,8 +151,8 @@ async function main() {
   if (typeof body.slug !== "string" || !body.slug) {
     throw new Error("Publish succeeded but returned no artifact slug.");
   }
-  if (args.isPublic && body.isPublic !== true) {
-    throw new Error("Publish succeeded, but the server did not confirm public access.");
+  if (args.isPublic !== undefined && body.isPublic !== args.isPublic) {
+    throw new Error("Publish succeeded, but the server did not confirm the requested access.");
   }
   if (args.expiresInSeconds === null && body.expiresAt !== null) {
     throw new Error("Publish succeeded, but the server did not confirm non-expiring access.");

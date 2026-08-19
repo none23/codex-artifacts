@@ -89,14 +89,17 @@ node scripts/publish.mjs ./report.html --title "Architecture report"
 --slug architecture-report        # Reuse the URL on future updates
 --share person@example.com        # Set additional exact-email recipients
 --share-domain example.com        # Set additional recipient domains
+--clear-share                     # Remove all exact-email recipients
+--clear-share-domain              # Remove all recipient domains
 --expires-in 1h                   # Override the default three-day lifetime
 --expires-in never                # Keep the artifact until deletion
 --public                          # Allow anyone with the link to view
+--private                         # Revoke public access
 --no-open                         # Do not open the result in a browser
 -- --option-like-name.html        # Publish a filename beginning with "-"
 ```
 
-Workspace viewers always retain access. On update, `--share` and `--share-domain` replace their respective artifact-specific lists. Omitting either option preserves that list. Omitting `--public` preserves the current public setting. Republishing resets the three-day expiration unless `--expires-in` supplies another duration or `never`.
+Workspace viewers always retain access. On update, `--share` and `--share-domain` replace their respective artifact-specific lists. The corresponding `--clear-*` option removes every rule in that list, while omission preserves it. Use `--public` or `--private` to change public access. Omitting both preserves the current setting. Republishing resets the three-day expiration unless `--expires-in` supplies another duration or `never`.
 
 The publisher rejects a process-level URL override paired with a token from the saved configuration. Override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
 

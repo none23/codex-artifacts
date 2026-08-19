@@ -28,12 +28,12 @@ argument-hint: "[request or HTML file]"
 ## Publish
 
 ```sh
-node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-artifacts}/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...>] [--share-domain <domain,...>] [--expires-in <1h|3d|never>] [--public]
+node "${CODEX_ARTIFACTS_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-artifacts}/scripts/publish.mjs" <file.html> --title "<title>" [--slug <slug>] [--share <email,...> | --clear-share] [--share-domain <domain,...> | --clear-share-domain] [--expires-in <1h|3d|never>] [--public | --private]
 ```
 
 - Omit `--slug` to create; reuse a slug to update.
-- Use `--share` and `--share-domain` only for additional user-named access. On update, omit either option to preserve its artifact-specific list or supply it to replace that list. Deployment-configured workspace viewers always retain read access.
-- Use `--public` only when the user explicitly requests public access.
+- Use `--share` and `--share-domain` only for additional user-named access. On update, omit either option to preserve its artifact-specific list, supply it to replace that list, or use the corresponding `--clear-*` option to remove every rule in that list. Deployment-configured workspace viewers always retain read access.
+- Use `--public` only when the user explicitly requests public access. Use `--private` to revoke existing public access.
 - Omit `--expires-in` for the three-day default. Re-publishing resets the timer; pass a duration or `never` to override it.
 - Always let the publisher open the artifact URL in the user's default browser after success. Never pass `--no-open` unless the user explicitly asks not to open the browser.
 
