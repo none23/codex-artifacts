@@ -27,7 +27,8 @@ paths:
       description: |
         The bearer token is deployment-wide owner automation authority. If `slug`
         identifies an existing artifact, its HTML and title are replaced. Omitted
-        `sharedWith` and `isPublic` values preserve existing settings during updates.
+        `sharedWith`, `sharedDomains`, and `isPublic` values preserve existing
+        settings during updates.
         Omitted `expiresInSeconds` values start or reset the three-day expiration
         timer. Set it to `null` for an artifact that never expires.
         Deployment-configured workspace viewers retain read access independently
@@ -113,6 +114,15 @@ components:
           items:
             type: string
             format: email
+        sharedDomains:
+          type: array
+          maxItems: 20
+          description: |
+            Additional artifact-specific email domains. Replaces only this
+            list when updating; workspace viewers retain access.
+          items:
+            type: string
+            format: hostname
         isPublic:
           type: boolean
         expiresInSeconds:

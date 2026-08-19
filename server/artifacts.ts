@@ -248,12 +248,14 @@ function validatePublishInput(
   html: string;
   sizeBytes: number;
   sharedWith: string[];
+  sharedDomains: string[];
   expiresAt: string | null;
 } {
   const title = cleanTitle(input.title);
   const slug = cleanSlug(input.slug);
   const sizeBytes = utf8Bytes(input.html);
   const sharedWith = normalizeSharedEmails(input.sharedWith ?? [], configuredOwners);
+  const sharedDomains = normalizeSharedDomains(input.sharedDomains ?? []);
   const expiresAt = expirationTimestamp(input.expiresInSeconds) || null;
 
   if (!title) throw new AppError("Title is required.");
@@ -265,7 +267,18 @@ function validatePublishInput(
   if ((input.sharedWith?.length ?? 0) > MAX_SHARED_EMAILS) {
     throw new AppError(`At most ${MAX_SHARED_EMAILS} people can be added.`);
   }
-  return { title, slug, html: input.html, sizeBytes, sharedWith, expiresAt };
+  if ((input.sharedDomains?.length ?? 0) > MAX_SHARED_DOMAINS) {
+    throw new AppError(`At most ${MAX_SHARED_DOMAINS} domains can be added.`);
+  }
+  return {
+    title,
+    slug,
+    html: input.html,
+    sizeBytes,
+    sharedWith,
+    sharedDomains,
+    expiresAt
+  };
 }
 
 async function requireArtifactCapacity(
@@ -465,8 +478,15 @@ export async function publishArtifact(
   const requestedSharedWith = artifact
     ? input.sharedWith ?? parseSharedEmails(artifact.sharedWith)
     : input.sharedWith ?? [];
+  const requestedSharedDomains = artifact
+    ? input.sharedDomains ?? parseSharedEmails(artifact.sharedDomains)
+    : input.sharedDomains ?? [];
   const validated = validatePublishInput(
-    { ...input, sharedWith: requestedSharedWith },
+    {
+      ...input,
+      sharedWith: requestedSharedWith,
+      sharedDomains: requestedSharedDomains
+    },
     implicitAccessEmails
   );
   const slugMatch = await artifactBySlugRow(env.DB, validated.slug);
@@ -481,14 +501,16 @@ export async function publishArtifact(
     await env.DB
       .prepare(
         `update "artifacts" set
-          "title" = ?, "slug" = ?, "sharedWith" = ?, "isPublic" = ?,
-          "expiresAt" = ?, "sizeBytes" = ?, "html" = ?, "updatedAt" = ?
+          "title" = ?, "slug" = ?, "sharedWith" = ?, "sharedDomains" = ?,
+          "isPublic" = ?, "expiresAt" = ?, "sizeBytes" = ?, "html" = ?,
+          "updatedAt" = ?
          where "id" = ?`
       )
       .bind(
         validated.title,
         validated.slug,
         JSON.stringify(validated.sharedWith),
+        JSON.stringify(validated.sharedDomains),
         isPublic ? 1 : 0,
         validated.expiresAt,
         validated.sizeBytes,
@@ -501,7 +523,7 @@ export async function publishArtifact(
       env.DB,
       artifact.id,
       validated.sharedWith,
-      parseSharedEmails(artifact.sharedDomains)
+      validated.sharedDomains
     );
     return {
       id: artifact.id,
@@ -521,7 +543,7 @@ export async function publishArtifact(
         "id", "slug", "title", "ownerId", "ownerEmail", "sharedWith",
         "sharedDomains", "isPublic", "expiresAt", "sizeBytes", "html",
         "createdAt", "updatedAt"
-      ) values (?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?)`
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -530,6 +552,7 @@ export async function publishArtifact(
       ownerId,
       configuredOwners[0],
       JSON.stringify(validated.sharedWith),
+      JSON.stringify(validated.sharedDomains),
       isPublic ? 1 : 0,
       validated.expiresAt,
       validated.sizeBytes,

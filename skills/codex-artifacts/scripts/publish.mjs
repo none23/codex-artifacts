@@ -16,14 +16,15 @@ const PUBLISH_TIMEOUT_MS = 30_000;
 
 function usage() {
   console.error(`Usage:
-  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--expires-in 3d|never] [--public] [--no-open]
+  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--share-domain example.com] [--expires-in 3d|never] [--public] [--no-open]
 
 Behavior:
   New artifacts are private by default.
   Deployment-configured workspace viewers always retain read access.
-  --share sets additional recipients and replaces them on update.
+  --share and --share-domain set additional access rules and replace their
+  respective lists on update.
   Reusing --slug updates the existing URL.
-  Omitting --share during an update preserves the existing allowlist.
+  Omitting either sharing option during an update preserves that list.
   Artifacts expire in 3 days by default; every update resets that timer.
   --expires-in accepts durations such as 1h, 3d, or 2w, or never.
   --public makes the artifact accessible without sign-in.
@@ -109,6 +110,9 @@ async function main() {
   };
   if (args.sharedWith.length > 0) {
     payload.sharedWith = args.sharedWith;
+  }
+  if (args.sharedDomains.length > 0) {
+    payload.sharedDomains = args.sharedDomains;
   }
   if (args.isPublic) {
     payload.isPublic = true;

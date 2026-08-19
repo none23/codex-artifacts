@@ -28,6 +28,10 @@ test("parses publishing options and repeated recipients", () => {
       "one@example.com,two@example.com",
       "--share",
       "three@example.com",
+      "--share-domain",
+      "example.org,example.net",
+      "--share-domain",
+      "another.example",
       "--public",
       "--expires-in",
       "1h",
@@ -38,6 +42,7 @@ test("parses publishing options and repeated recipients", () => {
       title: "Architecture",
       slug: "architecture",
       sharedWith: ["one@example.com", "two@example.com", "three@example.com"],
+      sharedDomains: ["example.org", "example.net", "another.example"],
       isPublic: true,
       expiresInSeconds: 3600,
       noOpen: true,
@@ -68,6 +73,10 @@ test("rejects unknown options, duplicate scalar options, and missing values", ()
   assert.throws(
     () => parseArguments(["report.html", "--expires-in", "1h", "--expires-in", "3d"]),
     /only be supplied once/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--share-domain", "--public"]),
+    /requires a value/
   );
 });
 

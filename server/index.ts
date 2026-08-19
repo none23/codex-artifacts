@@ -146,6 +146,7 @@ app.post("/api/artifacts", async (c) => {
     slug?: unknown;
     html?: unknown;
     sharedWith?: unknown;
+    sharedDomains?: unknown;
     isPublic?: unknown;
     expiresInSeconds?: unknown;
   }>();
@@ -172,6 +173,7 @@ app.post("/api/artifacts", async (c) => {
         .first<{
           id: string;
           sharedWith: string;
+          sharedDomains: string;
           isPublic: number;
         }>()
     : null;
@@ -182,12 +184,20 @@ app.post("/api/artifacts", async (c) => {
     : existing
       ? parseSharedEmails(existing.sharedWith)
       : [];
+  const sharedDomains = Array.isArray(body.sharedDomains)
+    ? body.sharedDomains.filter(
+        (value): value is string => typeof value === "string"
+      )
+    : existing
+      ? parseSharedEmails(existing.sharedDomains)
+      : [];
   const input: PublishInput = {
     artifactId: existing?.id,
     title,
     slug,
     html: body.html,
     sharedWith,
+    sharedDomains,
     isPublic:
       typeof body.isPublic === "boolean"
         ? body.isPublic

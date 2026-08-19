@@ -1,4 +1,10 @@
-const OPTIONS_WITH_VALUES = new Set(["--title", "--slug", "--share", "--expires-in"]);
+const OPTIONS_WITH_VALUES = new Set([
+  "--title",
+  "--slug",
+  "--share",
+  "--share-domain",
+  "--expires-in"
+]);
 const FLAG_OPTIONS = new Set(["--public", "--no-open", "--help", "-h"]);
 const MAX_EXPIRATION_SECONDS = 365 * 24 * 60 * 60;
 
@@ -26,6 +32,7 @@ export function parseArguments(args) {
     title: undefined,
     slug: undefined,
     sharedWith: [],
+    sharedDomains: [],
     isPublic: false,
     expiresInSeconds: undefined,
     noOpen: false,
@@ -51,6 +58,16 @@ export function parseArguments(args) {
 
       if (argument === "--share") {
         result.sharedWith.push(
+          ...value
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        );
+        continue;
+      }
+
+      if (argument === "--share-domain") {
+        result.sharedDomains.push(
           ...value
             .split(",")
             .map((item) => item.trim())

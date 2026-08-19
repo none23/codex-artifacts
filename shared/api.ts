@@ -43,6 +43,7 @@ export type PublishInput = {
   slug: string;
   html: string;
   sharedWith?: string[];
+  sharedDomains?: string[];
   isPublic?: boolean;
   expiresInSeconds?: number | null;
 };
