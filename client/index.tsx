@@ -637,6 +637,7 @@ function ArtifactFrame({ slug }: { slug: string }) {
   const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "expired" | "denied">("idle");
   const [expiredAt, setExpiredAt] = useState("");
   const [copied, setCopied] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState("");
 
   useEffect(() => {
     document.title = artifact
@@ -648,9 +649,17 @@ function ArtifactFrame({ slug }: { slug: string }) {
     };
   }, [artifact?.title]);
 
-  const downloadUrl = useMemo(() => {
-    if (!artifact) return "";
-    return URL.createObjectURL(new Blob([artifact.html], { type: "text/html;charset=utf-8" }));
+  useEffect(() => {
+    if (!artifact) {
+      setDownloadUrl("");
+      return;
+    }
+
+    const url = URL.createObjectURL(
+      new Blob([artifact.html], { type: "text/html;charset=utf-8" })
+    );
+    setDownloadUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [artifact?.html]);
   const previewHtml = useMemo(
     () => artifact ? withSrcdocBase(artifact.html) : "",
@@ -815,9 +824,10 @@ function ArtifactFrame({ slug }: { slug: string }) {
           </button>
           <a
             aria-label="Download HTML"
+            aria-disabled={!downloadUrl}
             className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-md bg-[#de5e1e] text-xs font-bold leading-4 text-white hover:bg-[#ed7134] sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5"
             download={`${artifact.slug}.html`}
-            href={downloadUrl}
+            href={downloadUrl || undefined}
             title="Download HTML"
           >
             <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
