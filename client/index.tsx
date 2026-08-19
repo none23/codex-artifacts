@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import faviconUrl from "../favicon.svg";
 import type { OwnedArtifact, ViewedArtifact } from "../shared/api";
 import { client } from "./api";
-import { SignInWithGoogle, signOut, useAuth } from "./auth";
+import { AuthProvider, SignInWithGoogle, signOut, useAuth } from "./auth";
 import { RequestFailure } from "./request-failure";
 import {
   DEFAULT_EXPIRATION_SECONDS,
@@ -942,8 +942,10 @@ function AppContent() {
 
 export function App() {
   return (
-    <Router>
-      <AppContent />
-    </Router>
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
   );
 }

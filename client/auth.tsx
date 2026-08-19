@@ -1,5 +1,12 @@
 import { createAuthClient } from "better-auth/client";
-import { useCallback, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode
+} from "react";
 
 const authClient = createAuthClient();
 
@@ -12,7 +19,9 @@ export type AuthState = {
   retry: () => void;
 };
 
-export function useAuth(): AuthState {
+const AuthContext = createContext<AuthState | null>(null);
+
+function useAuthState(): AuthState {
   const [state, setState] = useState<Omit<AuthState, "retry">>({
     isGuest: true,
     isLoading: true
@@ -61,6 +70,17 @@ export function useAuth(): AuthState {
   }, [retry, retryRevision]);
 
   return { ...state, retry };
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const auth = useAuthState();
+  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthState {
+  const auth = useContext(AuthContext);
+  if (!auth) throw new Error("useAuth must be used within AuthProvider.");
+  return auth;
 }
 
 export function SignInWithGoogle({ className }: { className?: string }) {
