@@ -1,23 +1,22 @@
 import {
+  BrowserRouter as Router,
   Link,
   Route,
-  Router,
   Routes,
-  SignInWithGoogle,
-  createClient,
-  signOut,
-  useAuth,
   useLocation,
   useParams
-} from "lakebed/client";
-import { useEffect, useMemo, useState } from "preact/hooks";
-import type app from "../server";
+} from "react-router-dom";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import faviconUrl from "../favicon.svg";
+import type { OwnedArtifact, ViewedArtifact } from "../shared/api";
+import { client } from "./api";
+import { AuthProvider, SignInWithGoogle, signOut, useAuth } from "./auth";
+import { RequestFailure } from "./request-failure";
 import {
   DEFAULT_EXPIRATION_SECONDS,
   MAX_ARTIFACT_BYTES,
   MAX_TOTAL_ARTIFACT_BYTES,
   artifactHref,
-  chunkHtml,
   cleanSlug,
   isValidDomain,
   isValidEmail,
@@ -25,7 +24,6 @@ import {
   normalizeEmail
 } from "../shared/config";
 
-const client = createClient<typeof app>();
 const DEFAULT_DOCUMENT_TITLE = "Codex Artifacts";
 const KNOWN_EMAILS_KEY = "codex-artifacts:known-emails";
 const SRCDOC_BASE = '<base href="about:srcdoc">';
@@ -148,7 +146,7 @@ function AppHeader() {
     <header className="border-b border-[#242424] bg-[#0b0b0b]">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <Link className="flex items-center gap-3" to="/">
-          <img alt="" className="h-9 w-9" src="/favicon.svg" />
+          <img alt="" className="h-9 w-9" src={faviconUrl} />
           <span>
             <span className="block text-sm font-semibold text-white">Codex Artifacts</span>
             <span className="block font-mono text-[10px] uppercase tracking-[0.18em] text-[#737373]">private by default</span>
@@ -171,7 +169,7 @@ function NewArtifactForm() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  async function submit(event: SubmitEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
@@ -192,7 +190,7 @@ function NewArtifactForm() {
       const result = await publishArtifact({
         title,
         slug,
-        chunks: chunkHtml(html),
+        html,
         expiresInSeconds: expirationValue(data.get("expiresInSeconds"))
       });
       const url = `${window.location.origin}${artifactHref(result.slug)}`;
@@ -243,8 +241,6 @@ function NewArtifactForm() {
   );
 }
 
-type OwnedArtifact = NonNullable<ReturnType<typeof client.useQuery<"ownedArtifacts">>>[number];
-
 function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
   const publishArtifact = client.useMutation("publishArtifact");
   const deleteArtifact = client.useMutation("deleteArtifact");
@@ -263,7 +259,7 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
         artifactId: artifact.id,
         title: artifact.title,
         slug: artifact.slug,
-        chunks: chunkHtml(await file.text()),
+        html: await file.text(),
         sharedWith: artifact.sharedWith,
         expiresInSeconds: expirationValue(expiresIn)
       });
@@ -338,11 +334,17 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
 }
 
 function OwnerDashboard() {
-  const artifacts = client.useQuery("ownedArtifacts");
-  const pruneExpiredArtifacts = client.useMutation("pruneExpiredArtifacts");
-  useEffect(() => {
-    void pruneExpiredArtifacts();
-  }, []);
+  const artifactsQuery = client.useQuery("ownedArtifacts");
+  const artifacts = artifactsQuery.data;
+  if (artifactsQuery.error) {
+    return (
+      <RequestFailure
+        error={artifactsQuery.error}
+        retry={artifactsQuery.retry}
+        title="Could not load artifacts."
+      />
+    );
+  }
   const usedBytes = artifacts?.reduce(
     (total, artifact) => total + Number(artifact.sizeBytes),
     0
@@ -392,7 +394,8 @@ function NonOwnerHome({ isWorkspaceViewer }: { isWorkspaceViewer: boolean }) {
 }
 
 function useAccessBootstrap() {
-  const viewer = client.useQuery("viewer");
+  const viewerQuery = client.useQuery("viewer");
+  const viewer = viewerQuery.data;
   const claimOwnerAccess = client.useMutation("claimOwnerAccess");
   const claimWorkspaceViewerAccess = client.useMutation("claimWorkspaceViewerAccess");
   const [state, setState] = useState<"idle" | "claiming" | "claimed" | "error">("idle");
@@ -434,10 +437,14 @@ function useAccessBootstrap() {
     state
   ]);
 
-  return { viewer, state, error };
+  return {
+    viewer,
+    state,
+    error,
+    queryError: viewerQuery.error,
+    retry: viewerQuery.retry
+  };
 }
-
-type ViewedArtifact = Exclude<ReturnType<typeof client.useQuery<"artifactBySlug">>, null | undefined>;
 
 function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
   const setArtifactAccess = client.useMutation("setArtifactAccess");
@@ -451,7 +458,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function addEmail(event: SubmitEvent) {
+  function addEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const email = normalizeEmail(emailInput);
     if (!isValidEmail(email)) {
@@ -472,7 +479,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
     setStatus("");
   }
 
-  function addDomain(event: SubmitEvent) {
+  function addDomain(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const domain = normalizeDomain(domainInput);
     if (!isValidDomain(domain)) {
@@ -623,12 +630,14 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
 
 function ArtifactFrame({ slug }: { slug: string }) {
   const auth = useAuth();
-  const artifact = client.useQuery("artifactBySlug", slug);
+  const artifactQuery = client.useQuery("artifactBySlug", slug);
+  const artifact = artifactQuery.data;
   const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
   const accessBootstrap = useAccessBootstrap();
   const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "expired" | "denied">("idle");
   const [expiredAt, setExpiredAt] = useState("");
   const [copied, setCopied] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState("");
 
   useEffect(() => {
     document.title = artifact
@@ -640,9 +649,17 @@ function ArtifactFrame({ slug }: { slug: string }) {
     };
   }, [artifact?.title]);
 
-  const downloadUrl = useMemo(() => {
-    if (!artifact) return "";
-    return URL.createObjectURL(new Blob([artifact.html], { type: "text/html;charset=utf-8" }));
+  useEffect(() => {
+    if (!artifact) {
+      setDownloadUrl("");
+      return;
+    }
+
+    const url = URL.createObjectURL(
+      new Blob([artifact.html], { type: "text/html;charset=utf-8" })
+    );
+    setDownloadUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [artifact?.html]);
   const previewHtml = useMemo(
     () => artifact ? withSrcdocBase(artifact.html) : "",
@@ -688,12 +705,32 @@ function ArtifactFrame({ slug }: { slug: string }) {
     return () => window.clearTimeout(timeout);
   }, [artifact, accessState]);
 
+  if (artifactQuery.error) {
+    return (
+      <RequestFailure
+        error={artifactQuery.error}
+        fullHeight
+        retry={artifactQuery.retry}
+        title="Could not open this artifact."
+      />
+    );
+  }
   if (artifact === undefined) {
     return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
   }
   if (artifact === null) {
     if (auth.isLoading) {
       return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
+    }
+    if (auth.error) {
+      return (
+        <RequestFailure
+          error={auth.error}
+          fullHeight
+          retry={auth.retry}
+          title="Could not check your session."
+        />
+      );
     }
     if (auth.isGuest) {
       return <SignInCard shared />;
@@ -787,9 +824,10 @@ function ArtifactFrame({ slug }: { slug: string }) {
           </button>
           <a
             aria-label="Download HTML"
+            aria-disabled={!downloadUrl}
             className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-md bg-[#de5e1e] text-xs font-bold leading-4 text-white hover:bg-[#ed7134] sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5"
             download={`${artifact.slug}.html`}
-            href={downloadUrl}
+            href={downloadUrl || undefined}
             title="Download HTML"
           >
             <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
@@ -827,12 +865,30 @@ function ArtifactFrame({ slug }: { slug: string }) {
 function RootPage() {
   const auth = useAuth();
   if (auth.isLoading) return <main className="grid min-h-[70vh] place-items-center text-slate-500">Checking session…</main>;
+  if (auth.error) {
+    return (
+      <RequestFailure
+        error={auth.error}
+        retry={auth.retry}
+        title="Could not check your session."
+      />
+    );
+  }
   if (auth.isGuest) return <SignInCard />;
   return <SignedInRoot />;
 }
 
 function SignedInRoot() {
-  const { viewer, state, error } = useAccessBootstrap();
+  const { viewer, state, error, queryError, retry } = useAccessBootstrap();
+  if (queryError) {
+    return (
+      <RequestFailure
+        error={queryError}
+        retry={retry}
+        title="Could not load workspace access."
+      />
+    );
+  }
   if (!viewer) {
     return <main className="grid min-h-[70vh] place-items-center text-slate-500">Loading workspace…</main>;
   }
@@ -896,8 +952,10 @@ function AppContent() {
 
 export function App() {
   return (
-    <Router>
-      <AppContent />
-    </Router>
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
   );
 }

@@ -1,5 +1,19 @@
-const OPTIONS_WITH_VALUES = new Set(["--title", "--slug", "--share", "--expires-in"]);
-const FLAG_OPTIONS = new Set(["--public", "--no-open", "--help", "-h"]);
+const OPTIONS_WITH_VALUES = new Set([
+  "--title",
+  "--slug",
+  "--share",
+  "--share-domain",
+  "--expires-in"
+]);
+const FLAG_OPTIONS = new Set([
+  "--public",
+  "--private",
+  "--clear-share",
+  "--clear-share-domain",
+  "--no-open",
+  "--help",
+  "-h"
+]);
 const MAX_EXPIRATION_SECONDS = 365 * 24 * 60 * 60;
 
 export function parseExpiration(value) {
@@ -25,14 +39,17 @@ export function parseArguments(args) {
     file: undefined,
     title: undefined,
     slug: undefined,
-    sharedWith: [],
-    isPublic: false,
+    sharedWith: undefined,
+    sharedDomains: undefined,
+    isPublic: undefined,
     expiresInSeconds: undefined,
     noOpen: false,
     help: false
   };
   let positionalOnly = false;
   let expirationSupplied = false;
+  let shareMode;
+  let domainShareMode;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -50,7 +67,29 @@ export function parseArguments(args) {
       index += 1;
 
       if (argument === "--share") {
+        if (shareMode === "clear") {
+          throw new Error("--share cannot be combined with --clear-share.");
+        }
+        shareMode = "values";
+        result.sharedWith ??= [];
         result.sharedWith.push(
+          ...value
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        );
+        continue;
+      }
+
+      if (argument === "--share-domain") {
+        if (domainShareMode === "clear") {
+          throw new Error(
+            "--share-domain cannot be combined with --clear-share-domain."
+          );
+        }
+        domainShareMode = "values";
+        result.sharedDomains ??= [];
+        result.sharedDomains.push(
           ...value
             .split(",")
             .map((item) => item.trim())
@@ -77,7 +116,28 @@ export function parseArguments(args) {
     }
 
     if (!positionalOnly && FLAG_OPTIONS.has(argument)) {
-      if (argument === "--public") result.isPublic = true;
+      if (argument === "--public" || argument === "--private") {
+        if (result.isPublic !== undefined) {
+          throw new Error("Only one of --public or --private may be supplied.");
+        }
+        result.isPublic = argument === "--public";
+      }
+      if (argument === "--clear-share") {
+        if (shareMode) {
+          throw new Error("--clear-share cannot be combined with --share.");
+        }
+        shareMode = "clear";
+        result.sharedWith = [];
+      }
+      if (argument === "--clear-share-domain") {
+        if (domainShareMode) {
+          throw new Error(
+            "--clear-share-domain cannot be combined with --share-domain."
+          );
+        }
+        domainShareMode = "clear";
+        result.sharedDomains = [];
+      }
       if (argument === "--no-open") result.noOpen = true;
       if (argument === "--help" || argument === "-h") result.help = true;
       continue;
@@ -143,6 +203,23 @@ export function buildArtifactUrl(baseUrl, slug) {
   const url = new URL("/", validateBaseUrl(baseUrl));
   url.searchParams.set("artifact", slug);
   return url.toString();
+}
+
+export function buildPublishPayload(args, html, defaultTitle) {
+  const payload = {
+    title: args.title ?? defaultTitle,
+    html
+  };
+  if (args.slug !== undefined) payload.slug = args.slug;
+  if (args.sharedWith !== undefined) payload.sharedWith = args.sharedWith;
+  if (args.sharedDomains !== undefined) {
+    payload.sharedDomains = args.sharedDomains;
+  }
+  if (args.isPublic !== undefined) payload.isPublic = args.isPublic;
+  if (args.expiresInSeconds !== undefined) {
+    payload.expiresInSeconds = args.expiresInSeconds;
+  }
+  return payload;
 }
 
 export function resolvePublishingProfile(environment, configuration) {

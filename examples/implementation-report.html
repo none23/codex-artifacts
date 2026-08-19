@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codex Artifacts — Implementation Report</title>
+  <title>Codex Artifacts: Implementation Report</title>
   <style>
     :root {
       color-scheme: dark;
@@ -136,15 +136,15 @@
 <body>
   <div class="page">
     <main>
-      <p class="eyebrow">Implementation report · July 2026</p>
+      <p class="eyebrow">Implementation report · August 2026</p>
       <h1>A private place for agent-built HTML.</h1>
-      <p class="lead">We evaluated Lakebed, used its hosted identity and runtime, and built a private-by-default artifact service for Codex without adding paid infrastructure.</p>
+      <p class="lead">Codex Artifacts runs as a private-by-default Cloudflare Worker with Google identity, D1 storage, and no required paid infrastructure.</p>
 
       <dl class="facts">
         <div class="fact"><dt>Deployment owner</dt><dd>Authenticated account</dd></div>
         <div class="fact"><dt>Viewer identity</dt><dd>Google</dd></div>
-        <div class="fact"><dt>Default access</dt><dd>Owner only</dd></div>
-        <div class="fact"><dt>Runtime</dt><dd>Lakebed</dd></div>
+        <div class="fact"><dt>Default access</dt><dd>Owners and workspace viewers</dd></div>
+        <div class="fact"><dt>Runtime</dt><dd>Cloudflare Workers</dd></div>
       </dl>
 
       <section>
@@ -152,7 +152,7 @@
         <div>
           <h2>What was delivered</h2>
           <div class="features">
-            <article class="feature"><h3>Third-party authentication</h3><p>Lakebed supplies verified Google identities. A single configurable email list grants owner access across devices.</p></article>
+            <article class="feature"><h3>Third-party authentication</h3><p>Better Auth verifies Google identities. Configurable email invitations grant owner and workspace-viewer access across devices.</p></article>
             <article class="feature"><h3>Flexible access control</h3><p>Every artifact starts private. Owners can allow exact emails, verified-email domains, or public link access from the viewer bar.</p></article>
             <article class="feature"><h3>Sandboxed HTML</h3><p>Interactive content runs without same-origin privileges, isolating it from the authenticated viewer.</p></article>
             <article class="feature"><h3>Agent publishing</h3><p>A zero-dependency script publishes through a secret-protected endpoint and returns the private link.</p></article>
@@ -167,7 +167,7 @@
           <ol class="flow">
             <li><strong>Generate</strong><p>Codex creates one self-contained HTML page.</p></li>
             <li><strong>Publish</strong><p>The local script authenticates with a server-only token.</p></li>
-            <li><strong>Authorize</strong><p>The server stores an empty or explicit email allowlist.</p></li>
+            <li><strong>Authorize</strong><p>The server combines workspace viewers with artifact-specific email and domain rules.</p></li>
             <li><strong>View</strong><p>A verified recipient signs in and opens the sandboxed page.</p></li>
           </ol>
         </div>
@@ -176,8 +176,8 @@
       <section>
         <div class="section-label">03 · Decision</div>
         <div>
-          <h2>Why Lakebed</h2>
-          <p class="decision">Lakebed already provided deployment, identity, server execution, database transactions, secrets, and a stable subdomain. Because its object storage blocks HTML, the service stores pages in database chunks. The tradeoff is a compact personal service: 512 KiB per artifact within a 1 MiB state limit.</p>
+          <h2>Why Cloudflare</h2>
+          <p class="decision">One Worker hosts the Hono API and React app, while Better Auth and artifact data share a D1 database. Each artifact is stored atomically in one row. A 400 MiB application budget leaves room for identities, sessions, access records, and indexes within the free D1 database limit.</p>
         </div>
       </section>
 
@@ -187,17 +187,17 @@
           <h2>Production checks</h2>
           <ul class="checks">
             <li><span class="check">✓</span><span>Invalid publishing credentials receive HTTP 401.</span></li>
-            <li><span class="check">✓</span><span>A valid agent token publishes chunked HTML.</span></li>
-            <li><span class="check">✓</span><span>New artifacts default to owner-only access.</span></li>
+            <li><span class="check">✓</span><span>A valid agent token publishes HTML atomically to D1.</span></li>
+            <li><span class="check">✓</span><span>New artifacts default to owners and configured workspace viewers.</span></li>
             <li><span class="check">✓</span><span>Existing slugs update at the same URL.</span></li>
-            <li><span class="check">✓</span><span>The claimed deployment is permanent and tied to its authenticated owner.</span></li>
+            <li><span class="check">✓</span><span>Google identities bind owner and recipient invitations to durable user IDs.</span></li>
           </ul>
         </div>
       </section>
     </main>
 
     <footer>
-      <span>Deployed Lakebed capsule</span>
+      <span>Cloudflare Worker and D1</span>
       <span>Private by default</span>
     </footer>
   </div>

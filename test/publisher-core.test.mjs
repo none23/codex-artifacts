@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildArtifactUrl,
+  buildPublishPayload,
   parseArguments,
   parseExpiration,
   parseEnv,
@@ -28,6 +29,10 @@ test("parses publishing options and repeated recipients", () => {
       "one@example.com,two@example.com",
       "--share",
       "three@example.com",
+      "--share-domain",
+      "example.org,example.net",
+      "--share-domain",
+      "another.example",
       "--public",
       "--expires-in",
       "1h",
@@ -38,6 +43,7 @@ test("parses publishing options and repeated recipients", () => {
       title: "Architecture",
       slug: "architecture",
       sharedWith: ["one@example.com", "two@example.com", "three@example.com"],
+      sharedDomains: ["example.org", "example.net", "another.example"],
       isPublic: true,
       expiresInSeconds: 3600,
       noOpen: true,
@@ -54,6 +60,35 @@ test("parses relative and never expiration settings", () => {
   assert.throws(() => parseExpiration("366d"), /between 1m and 365d/);
 });
 
+test("parses explicit access revocation without collapsing it into omission", () => {
+  const omitted = parseArguments(["report.html"]);
+  assert.equal(omitted.sharedWith, undefined);
+  assert.equal(omitted.sharedDomains, undefined);
+  assert.equal(omitted.isPublic, undefined);
+
+  const cleared = parseArguments([
+    "report.html",
+    "--clear-share",
+    "--clear-share-domain",
+    "--private"
+  ]);
+  assert.deepEqual(cleared.sharedWith, []);
+  assert.deepEqual(cleared.sharedDomains, []);
+  assert.equal(cleared.isPublic, false);
+
+  assert.deepEqual(buildPublishPayload(omitted, "<h1>Report</h1>", "report"), {
+    title: "report",
+    html: "<h1>Report</h1>"
+  });
+  assert.deepEqual(buildPublishPayload(cleared, "<h1>Report</h1>", "report"), {
+    title: "report",
+    html: "<h1>Report</h1>",
+    sharedWith: [],
+    sharedDomains: [],
+    isPublic: false
+  });
+});
+
 test("supports an option-like filename after the option terminator", () => {
   assert.equal(parseArguments(["--", "--report.html"]).file, "--report.html");
 });
@@ -68,6 +103,22 @@ test("rejects unknown options, duplicate scalar options, and missing values", ()
   assert.throws(
     () => parseArguments(["report.html", "--expires-in", "1h", "--expires-in", "3d"]),
     /only be supplied once/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--share-domain", "--public"]),
+    /requires a value/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--share", "one@example.com", "--clear-share"]),
+    /cannot be combined/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--clear-share-domain", "--share-domain", "example.com"]),
+    /cannot be combined/
+  );
+  assert.throws(
+    () => parseArguments(["report.html", "--public", "--private"]),
+    /Only one/
   );
 });
 

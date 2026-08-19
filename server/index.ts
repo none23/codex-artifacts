@@ -1,842 +1,205 @@
+import { Hono, type Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { ApiError, PublishInput, PublishResponse } from "../shared/api";
 import {
-  boolean,
-  capsule,
-  endpoint,
-  id,
-  json,
-  mutation,
-  query,
-  string,
-  table,
-  text,
-  type QueryServerContext,
-  type ServerContext,
-  type WriteDatabaseForSchema
-} from "lakebed/server";
+  acceptArtifactAccess,
+  artifactBySlug,
+  claimOwnerAccess,
+  claimWorkspaceViewerAccess,
+  deleteArtifact,
+  ownedArtifacts,
+  ownerEmails,
+  publishArtifact,
+  publishAsSignedInOwner,
+  removeExpiredArtifacts,
+  setArtifactAccess,
+  setArtifactExpiration,
+  viewer
+} from "./artifacts";
 import {
-  MAX_ARTIFACT_BYTES,
-  MAX_CHUNK_BYTES,
-  MAX_SHARED_DOMAINS,
-  MAX_SHARED_EMAILS,
-  MAX_TOTAL_ARTIFACT_BYTES,
-  chunkHtml,
-  cleanSlug,
-  cleanTitle,
-  emailDomain,
-  expirationTimestamp,
-  isArtifactExpired,
-  isValidEmail,
-  normalizeEmail,
-  normalizeSharedDomains,
-  normalizeSharedEmails,
-  parseSharedEmails,
-  utf8Bytes
-} from "../shared/config";
-import { parseWorkspaceViewerEmails } from "../shared/workspace-viewers.mjs";
+  authenticatedIdentity,
+  createAuth,
+  type Bindings,
+  type Identity
+} from "./auth";
+import { AppError } from "./errors";
+import { cleanSlug, cleanTitle, parseSharedEmails } from "../shared/config";
+import {
+  parseArtifactAccess,
+  parseAutomationPublishRequest,
+  parseExpirationUpdate,
+  parsePublishInput
+} from "./inputs";
 
-const schema = {
-  artifacts: table({
-    slug: string(),
-    title: string(),
-    ownerId: string(),
-    ownerEmail: string(),
-    sharedWith: string().default("[]"),
-    sharedDomains: string().default("[]"),
-    isPublic: boolean().default(false),
-    expiresAt: string().default(""),
-    sizeBytes: string(),
-    chunkCount: string()
-  })
-    .index("by_slug", ["slug"])
-    .index("by_owner_email", ["ownerEmail"]),
-  artifactChunks: table({
-    artifactId: id("artifacts"),
-    part: string(),
-    content: string()
-  }).index("by_artifact_part", ["artifactId", "part"]),
-  ownerBindings: table({
-    userId: string(),
-    invitedEmail: string()
-  })
-    .index("by_user_id", ["userId"])
-    .index("by_invited_email", ["invitedEmail"]),
-  workspaceViewerBindings: table({
-    userId: string(),
-    invitedEmail: string()
-  })
-    .index("by_user_id", ["userId"])
-    .index("by_invited_email", ["invitedEmail"]),
-  artifactGrants: table({
-    artifactId: id("artifacts"),
-    userId: string(),
-    ruleType: string(),
-    ruleValue: string()
-  })
-    .index("by_artifact_user", ["artifactId", "userId"])
-    .index("by_artifact", ["artifactId"])
-};
-
-type AppContext = ServerContext<WriteDatabaseForSchema<typeof schema>>;
-type EnvironmentContext = { env: ServerContext["env"] };
-type AuthEnvironmentContext = Pick<QueryServerContext, "auth" | "env">;
-type OwnerReadContext = AuthEnvironmentContext & {
-  db: {
-    ownerBindings: Pick<AppContext["db"]["ownerBindings"], "withIndex">;
-  };
-};
-type WorkspaceViewerReadContext = AuthEnvironmentContext & {
-  db: {
-    workspaceViewerBindings: Pick<
-      AppContext["db"]["workspaceViewerBindings"],
-      "withIndex"
-    >;
-  };
-};
-type GrantReadContext = {
-  db: {
-    artifactGrants: Pick<AppContext["db"]["artifactGrants"], "withIndex">;
+type AppEnv = {
+  Bindings: Bindings;
+  Variables: {
+    identity: Identity | null;
   };
 };
 
-type PublishInput = {
-  artifactId?: string;
-  title: string;
-  slug: string;
-  chunks: string[];
-  sharedWith?: string[];
-  isPublic?: boolean;
-  expiresInSeconds?: number | null;
-};
+const app = new Hono<AppEnv>();
 
-type ArtifactAccessResult =
-  | { status: "accepted" }
-  | { status: "expired"; expiredAt: string }
-  | { status: "unavailable" };
-
-function ownerEmails(ctx: EnvironmentContext): string[] {
-  const configured = (ctx.env.OWNER_EMAILS ?? "")
-    .split(",")
-    .map(normalizeEmail)
-    .filter(isValidEmail);
-  const emails = [...new Set(configured)];
-  if (!emails.length) {
-    throw new Error("OWNER_EMAILS must contain at least one valid email address.");
-  }
-  return emails;
-}
-
-function primaryOwnerEmail(ctx: EnvironmentContext): string {
-  return ownerEmails(ctx)[0]!;
-}
-
-function workspaceViewerEmails(
-  ctx: EnvironmentContext,
-  configuredOwners = ownerEmails(ctx)
-): string[] {
-  return parseWorkspaceViewerEmails(
-    ctx.env.WORKSPACE_VIEWER_EMAILS,
-    configuredOwners,
-    MAX_SHARED_EMAILS
-  );
-}
-
-function isConfiguredOwner(ctx: EnvironmentContext, value: string): boolean {
-  return ownerEmails(ctx).includes(normalizeEmail(value));
-}
-
-function isConfiguredWorkspaceViewer(
-  ctx: EnvironmentContext,
-  value: string
-): boolean {
-  return workspaceViewerEmails(ctx).includes(normalizeEmail(value));
-}
-
-function authenticatedIdentity(
-  ctx: { auth: ServerContext["auth"] }
-): { userId: string; email: string } | null {
-  if (
-    !ctx.auth.isAuthenticated ||
-    ctx.auth.provider !== "google" ||
-    ctx.auth.emailVerified !== true ||
-    !ctx.auth.email
-  ) {
-    return null;
-  }
-  return {
-    userId: ctx.auth.userId,
-    email: normalizeEmail(ctx.auth.email)
-  };
-}
-
-async function ownerBinding(ctx: OwnerReadContext, userId: string) {
-  return ctx.db.ownerBindings
-    .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .first();
-}
-
-async function workspaceViewerBinding(
-  ctx: WorkspaceViewerReadContext,
-  userId: string
-) {
-  return ctx.db.workspaceViewerBindings
-    .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .first();
-}
-
-async function hasOwnerAccess(ctx: OwnerReadContext): Promise<boolean> {
-  const identity = authenticatedIdentity(ctx);
-  if (!identity) {
-    return false;
-  }
-  const binding = await ownerBinding(ctx, identity.userId);
-  return Boolean(binding && ownerEmails(ctx).includes(binding.invitedEmail));
-}
-
-async function requireOwner(ctx: OwnerReadContext): Promise<void> {
-  if (!(await hasOwnerAccess(ctx))) {
-    throw new Error("Only the artifact owner can perform this action.");
+async function requestJson(c: Context<AppEnv>): Promise<unknown> {
+  try {
+    return await c.req.json<unknown>();
+  } catch {
+    throw new AppError("Request body must be valid JSON.");
   }
 }
 
-async function hasWorkspaceViewerAccess(
-  ctx: WorkspaceViewerReadContext
-): Promise<boolean> {
-  const identity = authenticatedIdentity(ctx);
-  if (!identity) {
-    return false;
-  }
-  const binding = await workspaceViewerBinding(ctx, identity.userId);
-  return Boolean(
-    binding && workspaceViewerEmails(ctx).includes(binding.invitedEmail)
-  );
-}
-
-async function claimConfiguredOwner(ctx: AppContext): Promise<boolean> {
-  const identity = authenticatedIdentity(ctx);
-  if (!identity || !isConfiguredOwner(ctx, identity.email)) {
-    return false;
-  }
-
-  const existingForUser = await ownerBinding(ctx, identity.userId);
-  if (existingForUser?.invitedEmail === identity.email) {
-    return true;
-  }
-
-  const existingForInvitation = await ctx.db.ownerBindings
-    .withIndex("by_invited_email", (q) => q.eq("invitedEmail", identity.email))
-    .first();
-  if (existingForInvitation && existingForInvitation.userId !== identity.userId) {
-    throw new Error("This owner invitation has already been accepted by another identity.");
-  }
-
-  if (existingForUser) {
-    await ctx.db.ownerBindings.update(existingForUser.id, {
-      invitedEmail: identity.email
-    });
-  } else if (!existingForInvitation) {
-    await ctx.db.ownerBindings.insert({
-      userId: identity.userId,
-      invitedEmail: identity.email
-    });
-  }
-  return true;
-}
-
-async function claimConfiguredWorkspaceViewer(ctx: AppContext): Promise<boolean> {
-  const identity = authenticatedIdentity(ctx);
-  if (!identity || !workspaceViewerEmails(ctx).includes(identity.email)) {
-    return false;
-  }
-
-  const existingForUser = await workspaceViewerBinding(ctx, identity.userId);
-  if (existingForUser?.invitedEmail === identity.email) {
-    return true;
-  }
-
-  const existingForInvitation = await ctx.db.workspaceViewerBindings
-    .withIndex("by_invited_email", (q) => q.eq("invitedEmail", identity.email))
-    .first();
-  if (existingForInvitation && existingForInvitation.userId !== identity.userId) {
-    throw new Error(
-      "This workspace viewer invitation has already been accepted by another identity."
+app.onError((error, c) => {
+  if (error instanceof AppError) {
+    return c.json<ApiError>(
+      { error: error.message },
+      error.status as ContentfulStatusCode
     );
   }
-
-  if (existingForUser) {
-    await ctx.db.workspaceViewerBindings.update(existingForUser.id, {
-      invitedEmail: identity.email
-    });
-  } else if (!existingForInvitation) {
-    await ctx.db.workspaceViewerBindings.insert({
-      userId: identity.userId,
-      invitedEmail: identity.email
-    });
-  }
-  return true;
-}
-
-async function validArtifactGrant(
-  ctx: GrantReadContext,
-  artifactId: string,
-  userId: string,
-  sharedWith: string[],
-  sharedDomains: string[]
-): Promise<boolean> {
-  const grants = await ctx.db.artifactGrants
-    .withIndex("by_artifact_user", (q) =>
-      q.eq("artifactId", artifactId).eq("userId", userId)
-    )
-    .collect();
-  return grants.some((grant) =>
-    grant.ruleType === "email"
-      ? sharedWith.includes(grant.ruleValue)
-      : grant.ruleType === "domain" && sharedDomains.includes(grant.ruleValue)
-  );
-}
-
-async function pruneArtifactGrants(
-  ctx: AppContext,
-  artifactId: string,
-  sharedWith: string[],
-  sharedDomains: string[]
-) {
-  const grants = await ctx.db.artifactGrants
-    .withIndex("by_artifact", (q) => q.eq("artifactId", artifactId))
-    .collect();
-  for (const grant of grants) {
-    const isValid =
-      (grant.ruleType === "email" && sharedWith.includes(grant.ruleValue)) ||
-      (grant.ruleType === "domain" && sharedDomains.includes(grant.ruleValue));
-    if (!isValid) {
-      await ctx.db.artifactGrants.delete(grant.id);
-    }
-  }
-}
-
-function validateChunks(chunks: string[]): number {
-  if (!Array.isArray(chunks) || chunks.length === 0) {
-    throw new Error("Artifact HTML cannot be empty.");
-  }
-
-  let total = 0;
-  for (const chunk of chunks) {
-    if (typeof chunk !== "string") {
-      throw new Error("Artifact chunks must be strings.");
-    }
-    const size = utf8Bytes(chunk);
-    if (size > MAX_CHUNK_BYTES) {
-      throw new Error("An artifact chunk exceeds the 48 KiB limit.");
-    }
-    total += size;
-  }
-
-  if (total > MAX_ARTIFACT_BYTES) {
-    throw new Error("Artifact exceeds the 512 KiB limit.");
-  }
-  return total;
-}
-
-function validatePublishInput(input: PublishInput, configuredOwners: string[]) {
-  const title = cleanTitle(input.title);
-  const slug = cleanSlug(input.slug);
-  const sizeBytes = validateChunks(input.chunks);
-  const sharedWith = normalizeSharedEmails(input.sharedWith ?? [], configuredOwners);
-  const expiresAt = expirationTimestamp(input.expiresInSeconds);
-
-  if (!title) {
-    throw new Error("Title is required.");
-  }
-  if (!slug) {
-    throw new Error("A valid slug is required.");
-  }
-  if ((input.sharedWith?.length ?? 0) > MAX_SHARED_EMAILS) {
-    throw new Error(`At most ${MAX_SHARED_EMAILS} people can be added.`);
-  }
-
-  return { title, slug, sizeBytes, sharedWith, expiresAt };
-}
-
-async function replaceChunks(ctx: AppContext, artifactId: string, chunks: string[]) {
-  const oldChunks = await ctx.db.artifactChunks
-    .withIndex("by_artifact_part", (q) => q.eq("artifactId", artifactId))
-    .collect();
-
-  for (const chunk of oldChunks) {
-    await ctx.db.artifactChunks.delete(chunk.id);
-  }
-
-  for (let index = 0; index < chunks.length; index += 1) {
-    await ctx.db.artifactChunks.insert({
-      artifactId,
-      part: String(index).padStart(4, "0"),
-      content: chunks[index] ?? ""
-    });
-  }
-}
-
-async function deleteArtifactData(ctx: AppContext, artifactId: string) {
-  const chunks = await ctx.db.artifactChunks
-    .withIndex("by_artifact_part", (q) => q.eq("artifactId", artifactId))
-    .collect();
-  for (const chunk of chunks) {
-    await ctx.db.artifactChunks.delete(chunk.id);
-  }
-
-  const grants = await ctx.db.artifactGrants
-    .withIndex("by_artifact", (q) => q.eq("artifactId", artifactId))
-    .collect();
-  for (const grant of grants) {
-    await ctx.db.artifactGrants.delete(grant.id);
-  }
-  await ctx.db.artifacts.delete(artifactId);
-}
-
-async function removeExpiredArtifacts(ctx: AppContext): Promise<number> {
-  const artifacts = await ctx.db.artifacts.withIndex("by_creation").collect();
-  const expired = artifacts.filter((artifact) => isArtifactExpired(artifact.expiresAt));
-  for (const artifact of expired) {
-    await deleteArtifactData(ctx, artifact.id);
-  }
-  return expired.length;
-}
-
-async function requireArtifactCapacity(
-  ctx: AppContext,
-  nextSizeBytes: number,
-  replacedArtifactId?: string
-) {
-  const artifacts = await ctx.db.artifacts
-    .withIndex("by_creation")
-    .collect();
-  let storedBytes = 0;
-  for (const artifact of artifacts) {
-    if (artifact.id === replacedArtifactId) {
-      continue;
-    }
-    const size = Number(artifact.sizeBytes);
-    if (Number.isFinite(size) && size > 0) {
-      storedBytes += size;
-    }
-  }
-  if (storedBytes + nextSizeBytes > MAX_TOTAL_ARTIFACT_BYTES) {
-    throw new Error(
-      "Publishing this artifact would exceed the 768 KiB workspace HTML budget. " +
-      "Delete an older artifact or publish a smaller file."
-    );
-  }
-}
-
-async function publishAsOwner(
-  ctx: AppContext,
-  input: PublishInput,
-  ownerId: string
-): Promise<{ id: string; slug: string; expiresAt: string | null }> {
-  await removeExpiredArtifacts(ctx);
-  const configuredOwners = ownerEmails(ctx);
-  const configuredWorkspaceViewers = workspaceViewerEmails(ctx, configuredOwners);
-  const implicitAccessEmails = [
-    ...configuredOwners,
-    ...configuredWorkspaceViewers
-  ];
-  const artifact = input.artifactId
-    ? await ctx.db.artifacts.get(input.artifactId)
-    : null;
-  if (input.artifactId && !artifact) {
-    throw new Error("Artifact not found.");
-  }
-
-  const requestedSharedWith = artifact
-    ? input.sharedWith ?? parseSharedEmails(artifact.sharedWith)
-    : input.sharedWith ?? [];
-  const validated = validatePublishInput(
-    { ...input, sharedWith: requestedSharedWith },
-    implicitAccessEmails
-  );
-
-  if (artifact) {
-    await requireArtifactCapacity(ctx, validated.sizeBytes, artifact.id);
-
-    const slugMatch = await ctx.db.artifacts
-      .withIndex("by_slug", (q) => q.eq("slug", validated.slug))
-      .first();
-    if (slugMatch && slugMatch.id !== artifact.id) {
-      throw new Error("That slug is already in use.");
-    }
-
-    await replaceChunks(ctx, artifact.id, input.chunks);
-    await ctx.db.artifacts.update(artifact.id, {
-      title: validated.title,
-      slug: validated.slug,
-      sharedWith: JSON.stringify(validated.sharedWith),
-      isPublic: input.isPublic ?? artifact.isPublic,
-      expiresAt: validated.expiresAt,
-      sizeBytes: String(validated.sizeBytes),
-      chunkCount: String(input.chunks.length)
-    });
-    await pruneArtifactGrants(
-      ctx,
-      artifact.id,
-      validated.sharedWith,
-      parseSharedEmails(artifact.sharedDomains)
-    );
-    return {
-      id: artifact.id,
-      slug: validated.slug,
-      expiresAt: validated.expiresAt || null
-    };
-  }
-
-  const existing = await ctx.db.artifacts
-    .withIndex("by_slug", (q) => q.eq("slug", validated.slug))
-    .first();
-  if (existing) {
-    throw new Error("That slug is already in use.");
-  }
-  await requireArtifactCapacity(ctx, validated.sizeBytes);
-
-  const createdArtifact = await ctx.db.artifacts.insert({
-    title: validated.title,
-    slug: validated.slug,
-    ownerId,
-    ownerEmail: configuredOwners[0]!,
-    sharedWith: JSON.stringify(validated.sharedWith),
-    sharedDomains: "[]",
-    isPublic: input.isPublic === true,
-    expiresAt: validated.expiresAt,
-    sizeBytes: String(validated.sizeBytes),
-    chunkCount: String(input.chunks.length)
-  });
-  await replaceChunks(ctx, createdArtifact.id, input.chunks);
-  return {
-    id: createdArtifact.id,
-    slug: validated.slug,
-    expiresAt: validated.expiresAt || null
-  };
-}
-
-export default capsule({
-  name: "Codex Artifacts",
-  favicon: "favicon.svg",
-  schema,
-
-  queries: {
-    viewer: query(async (ctx) => {
-      const identity = authenticatedIdentity(ctx);
-      return {
-        isOwner: await hasOwnerAccess(ctx),
-        isWorkspaceViewer: await hasWorkspaceViewerAccess(ctx),
-        canClaimOwner: Boolean(identity && isConfiguredOwner(ctx, identity.email)),
-        canClaimWorkspaceViewer: Boolean(
-          identity && isConfiguredWorkspaceViewer(ctx, identity.email)
-        )
-      };
-    }),
-
-    ownedArtifacts: query(async (ctx) => {
-      if (!(await hasOwnerAccess(ctx))) {
-        return [];
-      }
-
-      const workspaceViewerCount = workspaceViewerEmails(ctx).length;
-      const artifacts = await ctx.db.artifacts
-        .withIndex("by_creation")
-        .order("desc")
-        .collect();
-
-      return artifacts
-        .filter((artifact) => !isArtifactExpired(artifact.expiresAt))
-        .map((artifact) => ({
-          ...artifact,
-          expiresAt: artifact.expiresAt || null,
-          sharedWith: parseSharedEmails(artifact.sharedWith),
-          sharedDomains: parseSharedEmails(artifact.sharedDomains),
-          workspaceViewerCount,
-          isPublic: artifact.isPublic === true
-        }));
-    }),
-
-    artifactBySlug: query(async (ctx, slugInput: string) => {
-      const slug = cleanSlug(slugInput);
-      const artifact = await ctx.db.artifacts
-        .withIndex("by_slug", (q) => q.eq("slug", slug))
-        .first();
-      if (!artifact || isArtifactExpired(artifact.expiresAt)) {
-        return null;
-      }
-
-      const sharedWith = parseSharedEmails(artifact.sharedWith);
-      const sharedDomains = parseSharedEmails(artifact.sharedDomains);
-      const isPublic = artifact.isPublic === true;
-      const identity = authenticatedIdentity(ctx);
-      const configuredOwners = ownerEmails(ctx);
-      const configuredWorkspaceViewers = workspaceViewerEmails(ctx, configuredOwners);
-      const canManage = await hasOwnerAccess(ctx);
-      const hasWorkspaceAccess = await hasWorkspaceViewerAccess(ctx);
-      const hasGrant = identity
-        ? await validArtifactGrant(
-            ctx,
-            artifact.id,
-            identity.userId,
-            sharedWith,
-            sharedDomains
-          )
-        : false;
-      const canView =
-        isPublic ||
-        canManage ||
-        hasWorkspaceAccess ||
-        hasGrant;
-      if (!canView) {
-        return null;
-      }
-
-      const chunks = await ctx.db.artifactChunks
-        .withIndex("by_artifact_part", (q) => q.eq("artifactId", artifact.id))
-        .order("asc")
-        .collect();
-
-      return {
-        id: artifact.id,
-        slug: artifact.slug,
-        title: artifact.title,
-        html: chunks.map((chunk) => chunk.content).join(""),
-        sizeBytes: Number(artifact.sizeBytes),
-        updatedAt: artifact.updatedAt,
-        expiresAt: artifact.expiresAt || null,
-        isPublic,
-        canManage,
-        ownerEmails: canManage ? configuredOwners : [],
-        workspaceViewerEmails: canManage ? configuredWorkspaceViewers : [],
-        sharedWith: canManage ? sharedWith : [],
-        sharedDomains: canManage ? sharedDomains : []
-      };
-    })
-  },
-
-  mutations: {
-    claimOwnerAccess: mutation(async (ctx) => ({
-      claimed: await claimConfiguredOwner(ctx)
-    })),
-
-    claimWorkspaceViewerAccess: mutation(async (ctx) => ({
-      claimed: await claimConfiguredWorkspaceViewer(ctx)
-    })),
-
-    acceptArtifactAccess: mutation(async (
-      ctx,
-      slugInput: string
-    ): Promise<ArtifactAccessResult> => {
-      const identity = authenticatedIdentity(ctx);
-      const slug = cleanSlug(slugInput);
-      const artifact = await ctx.db.artifacts
-        .withIndex("by_slug", (q) => q.eq("slug", slug))
-        .first();
-      if (!artifact) {
-        return { status: "unavailable" };
-      }
-
-      if (!identity) {
-        return { status: "unavailable" };
-      }
-
-      const sharedWith = parseSharedEmails(artifact.sharedWith);
-      const sharedDomains = parseSharedEmails(artifact.sharedDomains);
-      const domain = emailDomain(identity.email);
-      const ruleType = sharedWith.includes(identity.email)
-        ? "email"
-        : sharedDomains.includes(domain)
-          ? "domain"
-          : null;
-      const ruleValue = ruleType === "email" ? identity.email : domain;
-      const isOwner = await claimConfiguredOwner(ctx);
-      const isWorkspaceViewer = isOwner
-        ? false
-        : await claimConfiguredWorkspaceViewer(ctx);
-      const hasGrant = await validArtifactGrant(
-        ctx,
-        artifact.id,
-        identity.userId,
-        sharedWith,
-        sharedDomains
-      );
-      const canView =
-        artifact.isPublic === true ||
-        isOwner ||
-        isWorkspaceViewer ||
-        hasGrant ||
-        ruleType !== null;
-      if (!canView) {
-        return { status: "unavailable" };
-      }
-      if (isArtifactExpired(artifact.expiresAt)) {
-        return { status: "expired", expiredAt: artifact.expiresAt };
-      }
-
-      if (!isOwner && !isWorkspaceViewer && !hasGrant && ruleType) {
-        await ctx.db.artifactGrants.insert({
-          artifactId: artifact.id,
-          userId: identity.userId,
-          ruleType,
-          ruleValue
-        });
-      }
-      return { status: "accepted" };
-    }),
-
-    publishArtifact: mutation(async (ctx, input: PublishInput) => {
-      await requireOwner(ctx);
-      return publishAsOwner(ctx, input, ctx.auth.userId);
-    }),
-
-    setArtifactExpiration: mutation(async (
-      ctx,
-      artifactId: string,
-      expiresInSeconds: number | null
-    ) => {
-      await requireOwner(ctx);
-      const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact || isArtifactExpired(artifact.expiresAt)) {
-        throw new Error("Artifact not found.");
-      }
-      const expiresAt = expirationTimestamp(expiresInSeconds);
-      await ctx.db.artifacts.update(artifact.id, { expiresAt });
-      return { expiresAt: expiresAt || null };
-    }),
-
-    pruneExpiredArtifacts: mutation(async (ctx) => {
-      await requireOwner(ctx);
-      return { removed: await removeExpiredArtifacts(ctx) };
-    }),
-
-    setArtifactAccess: mutation(async (
-      ctx,
-      artifactId: string,
-      access: { emails: string[]; domains: string[]; isPublic: boolean }
-    ) => {
-      await requireOwner(ctx);
-      const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact) {
-        throw new Error("Artifact not found.");
-      }
-      if (!Array.isArray(access.emails) || access.emails.length > MAX_SHARED_EMAILS) {
-        throw new Error(`At most ${MAX_SHARED_EMAILS} people can be added.`);
-      }
-      if (!Array.isArray(access.domains) || access.domains.length > MAX_SHARED_DOMAINS) {
-        throw new Error(`At most ${MAX_SHARED_DOMAINS} domains can be added.`);
-      }
-
-      const configuredOwners = ownerEmails(ctx);
-      const implicitAccessEmails = [
-        ...configuredOwners,
-        ...workspaceViewerEmails(ctx, configuredOwners)
-      ];
-      const sharedWith = normalizeSharedEmails(access.emails, implicitAccessEmails);
-      const sharedDomains = normalizeSharedDomains(access.domains);
-      await ctx.db.artifacts.update(artifact.id, {
-        sharedWith: JSON.stringify(sharedWith),
-        sharedDomains: JSON.stringify(sharedDomains),
-        isPublic: access.isPublic === true
-      });
-      await pruneArtifactGrants(ctx, artifact.id, sharedWith, sharedDomains);
-      return { emails: sharedWith, domains: sharedDomains, isPublic: access.isPublic === true };
-    }),
-
-    deleteArtifact: mutation(async (ctx, artifactId: string) => {
-      await requireOwner(ctx);
-      const artifact = await ctx.db.artifacts.get(artifactId);
-      if (!artifact) {
-        throw new Error("Artifact not found.");
-      }
-
-      await deleteArtifactData(ctx, artifact.id);
-    })
-  },
-
-  endpoints: {
-    status: endpoint({ method: "GET", path: "/api/status" }, () =>
-      json({ ok: true, service: "codex-artifacts" })
-    ),
-
-    publish: endpoint({ method: "POST", path: "/api/artifacts" }, async (ctx, req) => {
-      const expected = ctx.env.PUBLISH_TOKEN;
-      const authorization = req.headers.get("authorization");
-      if (!expected) {
-        return json(
-          { error: "Automation is disabled until PUBLISH_TOKEN is configured." },
-          { status: 503 }
-        );
-      }
-      if (authorization !== `Bearer ${expected}`) {
-        return text("Unauthorized", { status: 401 });
-      }
-
-      try {
-        const body = await req.json<{
-          title?: unknown;
-          slug?: unknown;
-          html?: unknown;
-          sharedWith?: unknown;
-          isPublic?: unknown;
-          expiresInSeconds?: unknown;
-        }>();
-        if (typeof body.title !== "string" || typeof body.html !== "string") {
-          return json({ error: "title and html must be strings" }, { status: 400 });
-        }
-
-        const title = cleanTitle(body.title);
-        if (
-          body.expiresInSeconds !== undefined &&
-          body.expiresInSeconds !== null &&
-          typeof body.expiresInSeconds !== "number"
-        ) {
-          return json(
-            { error: "expiresInSeconds must be a number of seconds or null" },
-            { status: 400 }
-          );
-        }
-        await removeExpiredArtifacts(ctx as AppContext);
-        const fallbackSlug = `${cleanSlug(title) || "artifact"}-${Date.now().toString(36)}`;
-        const requestedSlug = typeof body.slug === "string" ? cleanSlug(body.slug) : "";
-        const slug = requestedSlug || fallbackSlug;
-        const existing = requestedSlug
-          ? await ctx.db.artifacts
-              .withIndex("by_slug", (q) => q.eq("slug", requestedSlug))
-              .first()
-          : null;
-        const sharedWith = Array.isArray(body.sharedWith)
-          ? body.sharedWith.filter((value): value is string => typeof value === "string")
-          : existing
-            ? parseSharedEmails(existing.sharedWith)
-            : [];
-        const result = await publishAsOwner(
-          ctx as AppContext,
-          {
-            artifactId: existing?.id,
-            title,
-            slug,
-            chunks: chunkHtml(body.html),
-            sharedWith,
-            isPublic: typeof body.isPublic === "boolean"
-              ? body.isPublic
-              : existing?.isPublic === true,
-            expiresInSeconds: body.expiresInSeconds as number | null | undefined
-          },
-          `automation:${primaryOwnerEmail(ctx)}`
-        );
-        return json(
-          {
-            ...result,
-            updated: Boolean(existing),
-            isPublic: typeof body.isPublic === "boolean"
-              ? body.isPublic
-              : existing?.isPublic === true
-          },
-          { status: existing ? 200 : 201 }
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to publish artifact.";
-        return json({ error: message }, { status: 400 });
-      }
-    })
-  }
+  console.error(error);
+  return c.json<ApiError>({ error: "Internal server error." }, 500);
 });
+
+app.get("/api/status", (c) =>
+  c.json({ ok: true as const, service: "codex-artifacts" as const })
+);
+
+app.on(["GET", "POST"], "/api/auth/*", (c) =>
+  createAuth(c.env).handler(c.req.raw)
+);
+
+app.use("/api/app/*", async (c, next) => {
+  c.set("identity", await authenticatedIdentity(c.req.raw, c.env));
+  await next();
+});
+
+app.get("/api/app/viewer", async (c) =>
+  c.json(await viewer(c.env, c.var.identity))
+);
+
+app.get("/api/app/artifacts", async (c) =>
+  c.json(await ownedArtifacts(c.env, c.var.identity))
+);
+
+app.get("/api/app/artifacts/:slug", async (c) =>
+  c.json(await artifactBySlug(c.env, c.var.identity, c.req.param("slug")))
+);
+
+app.post("/api/app/access/claim-owner", async (c) =>
+  c.json({ claimed: await claimOwnerAccess(c.env, c.var.identity) })
+);
+
+app.post("/api/app/access/claim-workspace-viewer", async (c) =>
+  c.json({ claimed: await claimWorkspaceViewerAccess(c.env, c.var.identity) })
+);
+
+app.post("/api/app/artifacts/:slug/access/accept", async (c) =>
+  c.json(
+    await acceptArtifactAccess(c.env, c.var.identity, c.req.param("slug"))
+  )
+);
+
+app.post("/api/app/artifacts", async (c) => {
+  const input = parsePublishInput(await requestJson(c));
+  return c.json(await publishAsSignedInOwner(c.env, c.var.identity, input));
+});
+
+app.patch("/api/app/artifacts/:id/expiration", async (c) => {
+  const expiresInSeconds = parseExpirationUpdate(await requestJson(c));
+  return c.json(
+    await setArtifactExpiration(
+      c.env,
+      c.var.identity,
+      c.req.param("id"),
+      expiresInSeconds
+    )
+  );
+});
+
+app.put("/api/app/artifacts/:id/access", async (c) => {
+  const access = parseArtifactAccess(await requestJson(c));
+  return c.json(
+    await setArtifactAccess(c.env, c.var.identity, c.req.param("id"), access)
+  );
+});
+
+app.delete("/api/app/artifacts/:id", async (c) => {
+  await deleteArtifact(c.env, c.var.identity, c.req.param("id"));
+  return c.body(null, 204);
+});
+
+app.post("/api/artifacts", async (c) => {
+  const expected = c.env.PUBLISH_TOKEN;
+  if (!expected) {
+    return c.json<ApiError>(
+      { error: "Automation is disabled until PUBLISH_TOKEN is configured." },
+      503
+    );
+  }
+  if (c.req.header("authorization") !== `Bearer ${expected}`) {
+    return c.text("Unauthorized", 401);
+  }
+
+  const body = parseAutomationPublishRequest(await requestJson(c));
+
+  const title = cleanTitle(body.title);
+  const fallbackSlug = `${cleanSlug(title) || "artifact"}-${Date.now().toString(36)}`;
+  const requestedSlug = cleanSlug(body.slug ?? "");
+  const slug = requestedSlug || fallbackSlug;
+  const existing = requestedSlug
+    ? await c.env.DB
+        .prepare(
+          `select "id", "sharedWith", "sharedDomains", "isPublic"
+           from "artifacts" where "slug" = ?`
+        )
+        .bind(requestedSlug)
+        .first<{
+          id: string;
+          sharedWith: string;
+          sharedDomains: string;
+          isPublic: number;
+        }>()
+    : null;
+  const sharedWith = body.sharedWith
+    ? body.sharedWith
+    : existing
+      ? parseSharedEmails(existing.sharedWith)
+      : [];
+  const sharedDomains = body.sharedDomains
+    ? body.sharedDomains
+    : existing
+      ? parseSharedEmails(existing.sharedDomains)
+      : [];
+  const input: PublishInput = {
+    artifactId: existing?.id,
+    title,
+    slug,
+    html: body.html,
+    sharedWith,
+    sharedDomains,
+    isPublic: body.isPublic ?? existing?.isPublic === 1,
+    expiresInSeconds: body.expiresInSeconds
+  };
+  const result = await publishArtifact(
+    c.env,
+    input,
+    `automation:${ownerEmails(c.env)[0]}`
+  );
+  const response: PublishResponse = {
+    ...result,
+    updated: Boolean(existing)
+  };
+  return c.json(response, existing ? 200 : 201);
+});
+
+export type AppType = typeof app;
+
+export default {
+  fetch: app.fetch,
+  scheduled(
+    _controller: ScheduledController,
+    env: Bindings,
+    context: ExecutionContext
+  ) {
+    context.waitUntil(removeExpiredArtifacts(env.DB));
+  }
+} satisfies ExportedHandler<Bindings>;

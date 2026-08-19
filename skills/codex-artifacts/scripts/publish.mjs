@@ -6,6 +6,7 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildArtifactUrl,
+  buildPublishPayload,
   parseArguments,
   parseEnv,
   resolvePublishingProfile
@@ -16,17 +17,20 @@ const PUBLISH_TIMEOUT_MS = 30_000;
 
 function usage() {
   console.error(`Usage:
-  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com] [--expires-in 3d|never] [--public] [--no-open]
+  node publish.mjs <file.html> [--title "Title"] [--slug slug] [--share one@example.com,two@example.com | --clear-share] [--share-domain example.com | --clear-share-domain] [--expires-in 3d|never] [--public | --private] [--no-open]
 
 Behavior:
   New artifacts are private by default.
   Deployment-configured workspace viewers always retain read access.
-  --share sets additional recipients and replaces them on update.
+  --share and --share-domain set additional access rules and replace their
+  respective lists on update.
   Reusing --slug updates the existing URL.
-  Omitting --share during an update preserves the existing allowlist.
+  Omitting either sharing option during an update preserves that list.
+  --clear-share and --clear-share-domain remove their respective lists.
   Artifacts expire in 3 days by default; every update resets that timer.
   --expires-in accepts durations such as 1h, 3d, or 2w, or never.
   --public makes the artifact accessible without sign-in.
+  --private requires sign-in and a matching access rule.
 
 Environment:
   ARTIFACTS_URL             Deployed app URL
@@ -39,7 +43,7 @@ async function readConfiguration() {
   const scriptDirectory = dirname(fileURLToPath(import.meta.url));
   const envPath = process.env.CODEX_ARTIFACTS_ENV
     ? resolve(process.env.CODEX_ARTIFACTS_ENV)
-    : resolve(scriptDirectory, "../../../.env.lakebed.server");
+    : resolve(scriptDirectory, "../../../.env.cloudflare.server");
 
   try {
     return { path: envPath, values: parseEnv(await readFile(envPath, "utf8")) };
@@ -102,20 +106,7 @@ async function main() {
     throw new Error("Artifact exceeds the 512 KiB limit.");
   }
   const fileName = basename(filePath).replace(/\.html?$/i, "");
-  const payload = {
-    title: args.title ?? fileName,
-    slug: args.slug,
-    html
-  };
-  if (args.sharedWith.length > 0) {
-    payload.sharedWith = args.sharedWith;
-  }
-  if (args.isPublic) {
-    payload.isPublic = true;
-  }
-  if (args.expiresInSeconds !== undefined) {
-    payload.expiresInSeconds = args.expiresInSeconds;
-  }
+  const payload = buildPublishPayload(args, html, fileName);
 
   const response = await fetch(`${baseUrl}/api/artifacts`, {
     method: "POST",
@@ -145,8 +136,8 @@ async function main() {
   if (typeof body.slug !== "string" || !body.slug) {
     throw new Error("Publish succeeded but returned no artifact slug.");
   }
-  if (args.isPublic && body.isPublic !== true) {
-    throw new Error("Publish succeeded, but the server did not confirm public access.");
+  if (args.isPublic !== undefined && body.isPublic !== args.isPublic) {
+    throw new Error("Publish succeeded, but the server did not confirm the requested access.");
   }
   if (args.expiresInSeconds === null && body.expiresAt !== null) {
     throw new Error("Publish succeeded, but the server did not confirm non-expiring access.");

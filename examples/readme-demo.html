@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codex Artifacts — README</title>
+  <title>Codex Artifacts: README</title>
   <style>
     :root {
       color-scheme: dark;
@@ -139,7 +139,7 @@
       </div>
       <aside class="privacy">
         <strong>Private by default.</strong>
-        <p>Publishing creates an owner-only artifact until you choose otherwise.</p>
+        <p>Publishing creates a workspace-private artifact until you choose otherwise.</p>
         <div class="rules">
           <div class="rule"><span class="dot"></span>Share with exact Google accounts</div>
           <div class="rule"><span class="dot"></span>Allow a verified email domain</div>
@@ -178,7 +178,7 @@
     <section>
       <div class="section-head">
         <span class="step">03 / Commands</span>
-        <h2>One prompt—or one terminal command.</h2>
+        <h2>One prompt or one terminal command.</h2>
       </div>
       <div class="code-grid">
         <div class="code-card">
@@ -212,17 +212,16 @@ for this repository.</pre>
     <section>
       <div class="section-head">
         <span class="step">05 / Install</span>
-        <h2>Deploy the capsule, then link the skill.</h2>
+        <h2>Deploy to Cloudflare, then link the skill.</h2>
       </div>
       <div class="code-grid">
         <div class="code-card">
           <h3>Service</h3>
-          <pre>cp .env.lakebed.server.example \
-  .env.lakebed.server
+          <pre>export GOOGLE_CLIENT_ID="..."
+export GOOGLE_CLIENT_SECRET="..."
 
-<span class="comment"># Set OWNER_EMAILS, PUBLISH_TOKEN,</span>
-<span class="comment"># and ARTIFACTS_URL.</span>
-npm run deploy</pre>
+npm run setup -- \
+  --owner you@example.com</pre>
         </div>
         <div class="code-card">
           <h3>Codex skill</h3>
