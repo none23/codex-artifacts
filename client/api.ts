@@ -27,7 +27,6 @@ type MutationMap = {
     args: [artifactId: string, expiresInSeconds: number | null];
     result: { expiresAt: string | null };
   };
-  pruneExpiredArtifacts: { args: []; result: { removed: number } };
   setArtifactAccess: {
     args: [artifactId: string, access: ArtifactAccess];
     result: ArtifactAccess;
@@ -120,8 +119,6 @@ const mutations: {
       method: "PATCH",
       body: JSON.stringify({ expiresInSeconds })
     }),
-  pruneExpiredArtifacts: () =>
-    request("/api/app/artifacts/prune", { method: "POST" }),
   setArtifactAccess: (artifactId, access) =>
     request(`/api/app/artifacts/${encodeURIComponent(artifactId)}/access`, {
       method: "PUT",

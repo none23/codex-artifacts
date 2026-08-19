@@ -334,10 +334,6 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
 
 function OwnerDashboard() {
   const artifacts = client.useQuery("ownedArtifacts");
-  const pruneExpiredArtifacts = client.useMutation("pruneExpiredArtifacts");
-  useEffect(() => {
-    void pruneExpiredArtifacts();
-  }, []);
   const usedBytes = artifacts?.reduce(
     (total, artifact) => total + Number(artifact.sizeBytes),
     0

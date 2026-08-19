@@ -15,7 +15,6 @@ import {
   deleteArtifact,
   ownedArtifacts,
   ownerEmails,
-  pruneExpiredArtifacts,
   publishArtifact,
   publishAsSignedInOwner,
   removeExpiredArtifacts,
@@ -112,10 +111,6 @@ app.patch("/api/app/artifacts/:id/expiration", async (c) => {
     )
   );
 });
-
-app.post("/api/app/artifacts/prune", async (c) =>
-  c.json(await pruneExpiredArtifacts(c.env, c.var.identity))
-);
 
 app.put("/api/app/artifacts/:id/access", async (c) => {
   const access = await c.req.json<ArtifactAccess>();

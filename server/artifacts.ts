@@ -43,6 +43,8 @@ type ArtifactRow = {
   updatedAt: string;
 };
 
+type ArtifactMetadataRow = Omit<ArtifactRow, "html">;
+
 type BindingTable = "ownerBindings" | "workspaceViewerBindings";
 
 export class AppError extends Error {
@@ -345,19 +347,26 @@ export async function ownedArtifacts(
 ): Promise<OwnedArtifact[]> {
   if (!(await hasOwnerAccess(env, identity))) return [];
   const artifacts = await env.DB
-    .prepare('select * from "artifacts" order by "createdAt" desc')
-    .all<ArtifactRow>();
+    .prepare(
+      `select
+        "id", "slug", "title", "ownerId", "ownerEmail", "sharedWith",
+        "sharedDomains", "isPublic", "expiresAt", "sizeBytes", "createdAt",
+        "updatedAt"
+       from "artifacts"
+       where "expiresAt" is null or "expiresAt" > ?
+       order by "createdAt" desc`
+    )
+    .bind(new Date().toISOString())
+    .all<ArtifactMetadataRow>();
   const workspaceViewerCount = workspaceViewerEmails(env).length;
-  return artifacts.results
-    .filter((artifact) => !isArtifactExpired(artifact.expiresAt ?? ""))
-    .map(({ html: _html, ...artifact }) => ({
-      ...artifact,
-      expiresAt: artifact.expiresAt || null,
-      sharedWith: parseSharedEmails(artifact.sharedWith),
-      sharedDomains: parseSharedEmails(artifact.sharedDomains),
-      isPublic: artifact.isPublic === 1,
-      workspaceViewerCount
-    }));
+  return artifacts.results.map((artifact) => ({
+    ...artifact,
+    expiresAt: artifact.expiresAt || null,
+    sharedWith: parseSharedEmails(artifact.sharedWith),
+    sharedDomains: parseSharedEmails(artifact.sharedDomains),
+    isPublic: artifact.isPublic === 1,
+    workspaceViewerCount
+  }));
 }
 
 export async function artifactBySlug(
@@ -655,12 +664,4 @@ export async function removeExpiredArtifacts(db: D1Database): Promise<number> {
     .bind(new Date().toISOString())
     .run();
   return result.meta.changes ?? 0;
-}
-
-export async function pruneExpiredArtifacts(
-  env: Bindings,
-  identity: Identity | null
-): Promise<{ removed: number }> {
-  await requireOwner(env, identity);
-  return { removed: await removeExpiredArtifacts(env.DB) };
 }
