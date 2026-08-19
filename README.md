@@ -164,6 +164,8 @@ Create a `production` environment in the GitHub repository with:
 | `CLOUDFLARE_API_TOKEN` | Environment secret | A token restricted to the target account with Workers Scripts and D1 edit access |
 | `CLOUDFLARE_WRANGLER_CONFIG` | Environment secret | The full contents of the ignored production `wrangler.jsonc` |
 
+Restrict the environment's deployment branches to the selected branch `main`. This prevents workflows on other branches from requesting the production secrets.
+
 The Wrangler configuration contains deployment metadata rather than Worker secrets, but storing it as an environment secret keeps owner and viewer email lists out of the public repository. Better Auth, Google OAuth, and publishing secrets remain stored in Cloudflare and survive normal Worker deployments.
 
 ### Manual service update
