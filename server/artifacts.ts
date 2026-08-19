@@ -26,6 +26,7 @@ import type {
 } from "../shared/api";
 import { parseWorkspaceViewerEmails } from "../shared/workspace-viewers.mjs";
 import type { Bindings, Identity } from "./auth";
+import { AppError } from "./errors";
 
 type ArtifactRow = {
   id: string;
@@ -46,15 +47,6 @@ type ArtifactRow = {
 type ArtifactMetadataRow = Omit<ArtifactRow, "html">;
 
 type BindingTable = "ownerBindings" | "workspaceViewerBindings";
-
-export class AppError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 401 | 403 | 404 | 409 | 503 = 400
-  ) {
-    super(message);
-  }
-}
 
 export function ownerEmails(env: Bindings): string[] {
   const configured = (env.OWNER_EMAILS ?? "")

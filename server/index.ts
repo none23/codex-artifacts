@@ -1,14 +1,8 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type {
-  ApiError,
-  ArtifactAccess,
-  PublishInput,
-  PublishResponse
-} from "../shared/api";
+import type { ApiError, PublishInput, PublishResponse } from "../shared/api";
 import {
   acceptArtifactAccess,
-  AppError,
   artifactBySlug,
   claimOwnerAccess,
   claimWorkspaceViewerAccess,
@@ -28,7 +22,14 @@ import {
   type Bindings,
   type Identity
 } from "./auth";
+import { AppError } from "./errors";
 import { cleanSlug, cleanTitle, parseSharedEmails } from "../shared/config";
+import {
+  parseArtifactAccess,
+  parseAutomationPublishRequest,
+  parseExpirationUpdate,
+  parsePublishInput
+} from "./inputs";
 
 type AppEnv = {
   Bindings: Bindings;
@@ -38,6 +39,14 @@ type AppEnv = {
 };
 
 const app = new Hono<AppEnv>();
+
+async function requestJson(c: Context<AppEnv>): Promise<unknown> {
+  try {
+    return await c.req.json<unknown>();
+  } catch {
+    throw new AppError("Request body must be valid JSON.");
+  }
+}
 
 app.onError((error, c) => {
   if (error instanceof AppError) {
@@ -90,30 +99,24 @@ app.post("/api/app/artifacts/:slug/access/accept", async (c) =>
 );
 
 app.post("/api/app/artifacts", async (c) => {
-  const input = await c.req.json<PublishInput>();
+  const input = parsePublishInput(await requestJson(c));
   return c.json(await publishAsSignedInOwner(c.env, c.var.identity, input));
 });
 
 app.patch("/api/app/artifacts/:id/expiration", async (c) => {
-  const body = await c.req.json<{ expiresInSeconds?: unknown }>();
-  if (
-    body.expiresInSeconds !== null &&
-    typeof body.expiresInSeconds !== "number"
-  ) {
-    throw new AppError("expiresInSeconds must be a number of seconds or null");
-  }
+  const expiresInSeconds = parseExpirationUpdate(await requestJson(c));
   return c.json(
     await setArtifactExpiration(
       c.env,
       c.var.identity,
       c.req.param("id"),
-      body.expiresInSeconds
+      expiresInSeconds
     )
   );
 });
 
 app.put("/api/app/artifacts/:id/access", async (c) => {
-  const access = await c.req.json<ArtifactAccess>();
+  const access = parseArtifactAccess(await requestJson(c));
   return c.json(
     await setArtifactAccess(c.env, c.var.identity, c.req.param("id"), access)
   );
@@ -136,30 +139,11 @@ app.post("/api/artifacts", async (c) => {
     return c.text("Unauthorized", 401);
   }
 
-  const body = await c.req.json<{
-    title?: unknown;
-    slug?: unknown;
-    html?: unknown;
-    sharedWith?: unknown;
-    sharedDomains?: unknown;
-    isPublic?: unknown;
-    expiresInSeconds?: unknown;
-  }>();
-  if (typeof body.title !== "string" || typeof body.html !== "string") {
-    throw new AppError("title and html must be strings");
-  }
-  if (
-    body.expiresInSeconds !== undefined &&
-    body.expiresInSeconds !== null &&
-    typeof body.expiresInSeconds !== "number"
-  ) {
-    throw new AppError("expiresInSeconds must be a number of seconds or null");
-  }
+  const body = parseAutomationPublishRequest(await requestJson(c));
 
   const title = cleanTitle(body.title);
   const fallbackSlug = `${cleanSlug(title) || "artifact"}-${Date.now().toString(36)}`;
-  const requestedSlug =
-    typeof body.slug === "string" ? cleanSlug(body.slug) : "";
+  const requestedSlug = cleanSlug(body.slug ?? "");
   const slug = requestedSlug || fallbackSlug;
   const existing = requestedSlug
     ? await c.env.DB
@@ -175,17 +159,13 @@ app.post("/api/artifacts", async (c) => {
           isPublic: number;
         }>()
     : null;
-  const sharedWith = Array.isArray(body.sharedWith)
-    ? body.sharedWith.filter(
-        (value): value is string => typeof value === "string"
-      )
+  const sharedWith = body.sharedWith
+    ? body.sharedWith
     : existing
       ? parseSharedEmails(existing.sharedWith)
       : [];
-  const sharedDomains = Array.isArray(body.sharedDomains)
-    ? body.sharedDomains.filter(
-        (value): value is string => typeof value === "string"
-      )
+  const sharedDomains = body.sharedDomains
+    ? body.sharedDomains
     : existing
       ? parseSharedEmails(existing.sharedDomains)
       : [];
@@ -196,11 +176,8 @@ app.post("/api/artifacts", async (c) => {
     html: body.html,
     sharedWith,
     sharedDomains,
-    isPublic:
-      typeof body.isPublic === "boolean"
-        ? body.isPublic
-        : existing?.isPublic === 1,
-    expiresInSeconds: body.expiresInSeconds as number | null | undefined
+    isPublic: body.isPublic ?? existing?.isPublic === 1,
+    expiresInSeconds: body.expiresInSeconds
   };
   const result = await publishArtifact(
     c.env,
