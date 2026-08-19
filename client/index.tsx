@@ -139,6 +139,35 @@ function SignInCard({ shared = false }: { shared?: boolean }) {
   );
 }
 
+function RequestFailure({
+  title,
+  error,
+  retry,
+  fullHeight = false
+}: {
+  title: string;
+  error: Error;
+  retry: () => void;
+  fullHeight?: boolean;
+}) {
+  return (
+    <main
+      className={`mx-auto grid max-w-xl place-content-center px-6 py-24 text-center ${fullHeight ? "min-h-screen" : "min-h-[70vh]"}`}
+      role="alert"
+    >
+      <h1 className="text-2xl font-semibold text-white">{title}</h1>
+      <p className="mt-3 text-slate-400">{error.message}</p>
+      <button
+        className="mx-auto mt-6 rounded-lg bg-[#de5e1e] px-4 py-2 text-sm font-semibold text-white hover:bg-[#ed7134]"
+        onClick={retry}
+        type="button"
+      >
+        Try again
+      </button>
+    </main>
+  );
+}
+
 function AppHeader() {
   const auth = useAuth();
   return (
@@ -333,7 +362,17 @@ function ArtifactCard({ artifact }: { artifact: OwnedArtifact }) {
 }
 
 function OwnerDashboard() {
-  const artifacts = client.useQuery("ownedArtifacts");
+  const artifactsQuery = client.useQuery("ownedArtifacts");
+  const artifacts = artifactsQuery.data;
+  if (artifactsQuery.error) {
+    return (
+      <RequestFailure
+        error={artifactsQuery.error}
+        retry={artifactsQuery.retry}
+        title="Could not load artifacts."
+      />
+    );
+  }
   const usedBytes = artifacts?.reduce(
     (total, artifact) => total + Number(artifact.sizeBytes),
     0
@@ -383,7 +422,8 @@ function NonOwnerHome({ isWorkspaceViewer }: { isWorkspaceViewer: boolean }) {
 }
 
 function useAccessBootstrap() {
-  const viewer = client.useQuery("viewer");
+  const viewerQuery = client.useQuery("viewer");
+  const viewer = viewerQuery.data;
   const claimOwnerAccess = client.useMutation("claimOwnerAccess");
   const claimWorkspaceViewerAccess = client.useMutation("claimWorkspaceViewerAccess");
   const [state, setState] = useState<"idle" | "claiming" | "claimed" | "error">("idle");
@@ -425,7 +465,13 @@ function useAccessBootstrap() {
     state
   ]);
 
-  return { viewer, state, error };
+  return {
+    viewer,
+    state,
+    error,
+    queryError: viewerQuery.error,
+    retry: viewerQuery.retry
+  };
 }
 
 function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
@@ -612,7 +658,8 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
 
 function ArtifactFrame({ slug }: { slug: string }) {
   const auth = useAuth();
-  const artifact = client.useQuery("artifactBySlug", slug);
+  const artifactQuery = client.useQuery("artifactBySlug", slug);
+  const artifact = artifactQuery.data;
   const acceptArtifactAccess = client.useMutation("acceptArtifactAccess");
   const accessBootstrap = useAccessBootstrap();
   const [accessState, setAccessState] = useState<"idle" | "accepting" | "accepted" | "expired" | "denied">("idle");
@@ -677,12 +724,32 @@ function ArtifactFrame({ slug }: { slug: string }) {
     return () => window.clearTimeout(timeout);
   }, [artifact, accessState]);
 
+  if (artifactQuery.error) {
+    return (
+      <RequestFailure
+        error={artifactQuery.error}
+        fullHeight
+        retry={artifactQuery.retry}
+        title="Could not open this artifact."
+      />
+    );
+  }
   if (artifact === undefined) {
     return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
   }
   if (artifact === null) {
     if (auth.isLoading) {
       return <main className="grid min-h-screen place-items-center text-slate-500">Opening artifact…</main>;
+    }
+    if (auth.error) {
+      return (
+        <RequestFailure
+          error={auth.error}
+          fullHeight
+          retry={auth.retry}
+          title="Could not check your session."
+        />
+      );
     }
     if (auth.isGuest) {
       return <SignInCard shared />;
@@ -816,12 +883,30 @@ function ArtifactFrame({ slug }: { slug: string }) {
 function RootPage() {
   const auth = useAuth();
   if (auth.isLoading) return <main className="grid min-h-[70vh] place-items-center text-slate-500">Checking session…</main>;
+  if (auth.error) {
+    return (
+      <RequestFailure
+        error={auth.error}
+        retry={auth.retry}
+        title="Could not check your session."
+      />
+    );
+  }
   if (auth.isGuest) return <SignInCard />;
   return <SignedInRoot />;
 }
 
 function SignedInRoot() {
-  const { viewer, state, error } = useAccessBootstrap();
+  const { viewer, state, error, queryError, retry } = useAccessBootstrap();
+  if (queryError) {
+    return (
+      <RequestFailure
+        error={queryError}
+        retry={retry}
+        title="Could not load workspace access."
+      />
+    );
+  }
   if (!viewer) {
     return <main className="grid min-h-[70vh] place-items-center text-slate-500">Loading workspace…</main>;
   }
