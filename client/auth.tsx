@@ -27,8 +27,16 @@ export function useAuth(): AuthState {
     let active = true;
     void authClient
       .getSession()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (!active) return;
+        if (error) {
+          setState({
+            isGuest: true,
+            isLoading: false,
+            error: new Error(error.message || "The session request failed.")
+          });
+          return;
+        }
         setState({
           isGuest: !data?.user,
           isLoading: false,
@@ -56,19 +64,41 @@ export function useAuth(): AuthState {
 }
 
 export function SignInWithGoogle({ className }: { className?: string }) {
-  return (
-    <button
-      className={className}
-      onClick={() =>
-        void authClient.signIn.social({
-          provider: "google",
-          callbackURL: window.location.href
-        })
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function signIn() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await authClient.signIn.social({
+        provider: "google",
+        callbackURL: window.location.href
+      });
+      if (result.error) {
+        setError(result.error.message || "Google sign-in could not start.");
       }
-      type="button"
-    >
-      Sign in with Google
-    </button>
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Google sign-in could not start."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        className={className}
+        disabled={busy}
+        onClick={() => void signIn()}
+        type="button"
+      >
+        {busy ? "Starting sign-in…" : "Sign in with Google"}
+      </button>
+      {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+    </>
   );
 }
 
