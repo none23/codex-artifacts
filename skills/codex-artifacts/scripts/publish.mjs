@@ -6,6 +6,7 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildArtifactUrl,
+  buildPublishPayload,
   parseArguments,
   parseEnv,
   resolvePublishingProfile
@@ -105,23 +106,7 @@ async function main() {
     throw new Error("Artifact exceeds the 512 KiB limit.");
   }
   const fileName = basename(filePath).replace(/\.html?$/i, "");
-  const payload = {
-    title: args.title ?? fileName,
-    slug: args.slug,
-    html
-  };
-  if (args.sharedWith !== undefined) {
-    payload.sharedWith = args.sharedWith;
-  }
-  if (args.sharedDomains !== undefined) {
-    payload.sharedDomains = args.sharedDomains;
-  }
-  if (args.isPublic !== undefined) {
-    payload.isPublic = args.isPublic;
-  }
-  if (args.expiresInSeconds !== undefined) {
-    payload.expiresInSeconds = args.expiresInSeconds;
-  }
+  const payload = buildPublishPayload(args, html, fileName);
 
   const response = await fetch(`${baseUrl}/api/artifacts`, {
     method: "POST",

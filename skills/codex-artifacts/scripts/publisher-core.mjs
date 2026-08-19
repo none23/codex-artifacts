@@ -205,6 +205,23 @@ export function buildArtifactUrl(baseUrl, slug) {
   return url.toString();
 }
 
+export function buildPublishPayload(args, html, defaultTitle) {
+  const payload = {
+    title: args.title ?? defaultTitle,
+    html
+  };
+  if (args.slug !== undefined) payload.slug = args.slug;
+  if (args.sharedWith !== undefined) payload.sharedWith = args.sharedWith;
+  if (args.sharedDomains !== undefined) {
+    payload.sharedDomains = args.sharedDomains;
+  }
+  if (args.isPublic !== undefined) payload.isPublic = args.isPublic;
+  if (args.expiresInSeconds !== undefined) {
+    payload.expiresInSeconds = args.expiresInSeconds;
+  }
+  return payload;
+}
+
 export function resolvePublishingProfile(environment, configuration) {
   const environmentUrl = nonempty(environment.ARTIFACTS_URL);
   const environmentToken = nonempty(environment.ARTIFACTS_PUBLISH_TOKEN);

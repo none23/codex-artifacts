@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildArtifactUrl,
+  buildPublishPayload,
   parseArguments,
   parseExpiration,
   parseEnv,
@@ -74,6 +75,18 @@ test("parses explicit access revocation without collapsing it into omission", ()
   assert.deepEqual(cleared.sharedWith, []);
   assert.deepEqual(cleared.sharedDomains, []);
   assert.equal(cleared.isPublic, false);
+
+  assert.deepEqual(buildPublishPayload(omitted, "<h1>Report</h1>", "report"), {
+    title: "report",
+    html: "<h1>Report</h1>"
+  });
+  assert.deepEqual(buildPublishPayload(cleared, "<h1>Report</h1>", "report"), {
+    title: "report",
+    html: "<h1>Report</h1>",
+    sharedWith: [],
+    sharedDomains: [],
+    isPublic: false
+  });
 });
 
 test("supports an option-like filename after the option terminator", () => {
