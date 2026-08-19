@@ -7,6 +7,7 @@ import {
   useParams
 } from "react-router-dom";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import faviconUrl from "../favicon.svg";
 import type { OwnedArtifact, ViewedArtifact } from "../shared/api";
 import { client } from "./api";
 import { SignInWithGoogle, signOut, useAuth } from "./auth";
@@ -144,7 +145,7 @@ function AppHeader() {
     <header className="border-b border-[#242424] bg-[#0b0b0b]">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <Link className="flex items-center gap-3" to="/">
-          <img alt="" className="h-9 w-9" src="/favicon.svg" />
+          <img alt="" className="h-9 w-9" src={faviconUrl} />
           <span>
             <span className="block text-sm font-semibold text-white">Codex Artifacts</span>
             <span className="block font-mono text-[10px] uppercase tracking-[0.18em] text-[#737373]">private by default</span>
