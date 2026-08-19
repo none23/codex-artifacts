@@ -1,6 +1,6 @@
 ---
 name: codex-artifacts
-description: Create, publish or update shareble artifacts.
+description: Create, publish, or update shareable artifacts.
 argument-hint: "[request or HTML file]"
 ---
 

@@ -4,7 +4,7 @@ Codex Artifacts publishes self-contained HTML files as private, shareable web pa
 
 Each installation runs in the owner's Cloudflare account. It has separate data, credentials, and a publishing token. There is no shared hosted service.
 
-**[Explore the public capabilities demo](https://codex-artifacts.lakebed.app/?artifact=capabilities-demo)**
+**[Explore the public capabilities demo](https://codex-artifacts.none23.workers.dev/?artifact=capabilities-demo)**
 
 ## Set up your service
 
@@ -88,6 +88,7 @@ node scripts/publish.mjs ./report.html --title "Architecture report"
 ```sh
 --slug architecture-report        # Reuse the URL on future updates
 --share person@example.com        # Set additional exact-email recipients
+--share-domain example.com        # Set additional recipient domains
 --expires-in 1h                   # Override the default three-day lifetime
 --expires-in never                # Keep the artifact until deletion
 --public                          # Allow anyone with the link to view
@@ -95,13 +96,15 @@ node scripts/publish.mjs ./report.html --title "Architecture report"
 -- --option-like-name.html        # Publish a filename beginning with "-"
 ```
 
-Workspace viewers always retain access. On update, `--share` replaces only the artifact's additional exact-email list. Omitting it preserves existing access. Omitting `--public` preserves the current public setting. Republishing resets the three-day expiration unless `--expires-in` supplies another duration or `never`.
+Workspace viewers always retain access. On update, `--share` and `--share-domain` replace their respective artifact-specific lists. Omitting either option preserves that list. Omitting `--public` preserves the current public setting. Republishing resets the three-day expiration unless `--expires-in` supplies another duration or `never`.
 
 The publisher rejects a process-level URL override paired with a token from the saved configuration. Override `ARTIFACTS_URL` and `ARTIFACTS_PUBLISH_TOKEN` together.
 
 If the skill is copied away from this repository instead of linked, set `CODEX_ARTIFACTS_ENV` to the absolute path of `.env.cloudflare.server`.
 
 ## Identity and access
+
+New artifacts start private. Owners and the deployment's workspace viewers can read them immediately. Each artifact may also allow exact email addresses, email domains, or public access.
 
 Owner, workspace-viewer, and per-artifact recipient emails are invitations. They are not permanent authorization keys.
 
@@ -148,7 +151,22 @@ The automation contract remains documented in [openapi.yaml](openapi.yaml).
 
 ## Operations
 
-### Update
+### Automatic service deployments
+
+The GitHub Actions workflow checks every pull request and push to `main`. After a push to `main` passes, its production job applies pending D1 migrations and deploys the Worker. The job does not receive the publishing token and never creates or updates individual artifacts.
+
+Create a `production` environment in the GitHub repository with:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `ARTIFACTS_URL` | Environment variable | The deployed service origin |
+| `CLOUDFLARE_ACCOUNT_ID` | Environment secret | The target Cloudflare account ID |
+| `CLOUDFLARE_API_TOKEN` | Environment secret | A token restricted to the target account with Workers Scripts and D1 edit access |
+| `CLOUDFLARE_WRANGLER_CONFIG` | Environment secret | The full contents of the ignored production `wrangler.jsonc` |
+
+The Wrangler configuration contains deployment metadata rather than Worker secrets, but storing it as an environment secret keeps owner and viewer email lists out of the public repository. Better Auth, Google OAuth, and publishing secrets remain stored in Cloudflare and survive normal Worker deployments.
+
+### Manual service update
 
 ```sh
 git pull --ff-only
@@ -167,28 +185,6 @@ npx wrangler d1 export DB --remote \
 ```
 
 Keep exports private. They contain artifact HTML, identities, sessions, invitations, and access rules.
-
-### Migrate an existing Lakebed deployment
-
-Export Lakebed before removing its deployment:
-
-```sh
-DEPLOY_ID="$(node -p "JSON.parse(require('fs').readFileSync('lakebed.json')).deployId")"
-npx lakebed@0.0.29 db export "$DEPLOY_ID" --out codex-artifacts-lakebed-backup.json
-```
-
-Deploy the Cloudflare version, then import:
-
-```sh
-npm run setup -- --owner you@example.com
-node scripts/import-lakebed.mjs codex-artifacts-lakebed-backup.json
-```
-
-The first setup run also needs the Google OAuth environment variables described above.
-
-The importer preserves artifact IDs, slugs, HTML, timestamps, expiration, public settings, exact-email rules, and domain rules. It omits Lakebed identity bindings and accepted grants because those IDs have no meaning in Better Auth. Owners, viewers, and recipients reclaim access on their next Google sign-in.
-
-A `*.lakebed.app` URL cannot move to Cloudflare. Existing links keep working only when the Lakebed deployment already uses a custom domain that you transfer with `--domain`.
 
 ### Rotate secrets or change access lists
 

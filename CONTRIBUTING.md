@@ -13,7 +13,7 @@ npm run check
 
 The React app lives in `client/`, the Worker in `server/`, and shared contracts and validation in `shared/`. Build and setup scripts may use Node built-ins. Code bundled into the Worker or browser must use APIs available in those runtimes.
 
-For local Worker and D1 development, copy `wrangler.example.jsonc` to the ignored `wrangler.jsonc`, replace its owner and database binding, copy `.dev.vars.example` to `.dev.vars`, then apply migrations:
+For local Worker and D1 development, copy `wrangler.example.jsonc` to the ignored `wrangler.jsonc`, replace its owner and database binding, and create `.dev.vars` with the Better Auth, Google OAuth, and publishing secrets described in the README. Then apply migrations:
 
 ```sh
 npx wrangler d1 migrations apply DB --local --config wrangler.jsonc
@@ -32,6 +32,6 @@ npm run dev
 
 ## Pull requests
 
-Keep changes focused. Explain user-visible behavior, security impact, migration behavior, and verification. Add focused regression tests for access control, publisher configuration, CLI parsing, D1 migrations, and setup changes.
+Keep changes focused. Explain user-visible behavior, security impact, schema effects, and verification. Add focused regression tests for access control, publisher configuration, CLI parsing, D1 migrations, and setup changes.
 
 For security issues, follow [SECURITY.md](SECURITY.md) instead of opening a public pull request.

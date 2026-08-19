@@ -138,12 +138,12 @@
     <main>
       <p class="eyebrow">Implementation report · August 2026</p>
       <h1>A private place for agent-built HTML.</h1>
-      <p class="lead">Codex Artifacts now runs as a private-by-default Cloudflare Worker with Google identity, D1 storage, and no required paid infrastructure.</p>
+      <p class="lead">Codex Artifacts runs as a private-by-default Cloudflare Worker with Google identity, D1 storage, and no required paid infrastructure.</p>
 
       <dl class="facts">
         <div class="fact"><dt>Deployment owner</dt><dd>Authenticated account</dd></div>
         <div class="fact"><dt>Viewer identity</dt><dd>Google</dd></div>
-        <div class="fact"><dt>Default access</dt><dd>Owner only</dd></div>
+        <div class="fact"><dt>Default access</dt><dd>Owners and workspace viewers</dd></div>
         <div class="fact"><dt>Runtime</dt><dd>Cloudflare Workers</dd></div>
       </dl>
 
@@ -167,7 +167,7 @@
           <ol class="flow">
             <li><strong>Generate</strong><p>Codex creates one self-contained HTML page.</p></li>
             <li><strong>Publish</strong><p>The local script authenticates with a server-only token.</p></li>
-            <li><strong>Authorize</strong><p>The server stores an empty or explicit email allowlist.</p></li>
+            <li><strong>Authorize</strong><p>The server combines workspace viewers with artifact-specific email and domain rules.</p></li>
             <li><strong>View</strong><p>A verified recipient signs in and opens the sandboxed page.</p></li>
           </ol>
         </div>
@@ -188,7 +188,7 @@
           <ul class="checks">
             <li><span class="check">✓</span><span>Invalid publishing credentials receive HTTP 401.</span></li>
             <li><span class="check">✓</span><span>A valid agent token publishes HTML atomically to D1.</span></li>
-            <li><span class="check">✓</span><span>New artifacts default to owner-only access.</span></li>
+            <li><span class="check">✓</span><span>New artifacts default to owners and configured workspace viewers.</span></li>
             <li><span class="check">✓</span><span>Existing slugs update at the same URL.</span></li>
             <li><span class="check">✓</span><span>Google identities bind owner and recipient invitations to durable user IDs.</span></li>
           </ul>
