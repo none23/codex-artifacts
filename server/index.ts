@@ -163,7 +163,10 @@ app.post("/api/artifacts", async (c) => {
   const slug = requestedSlug || fallbackSlug;
   const existing = requestedSlug
     ? await c.env.DB
-        .prepare('select * from "artifacts" where "slug" = ?')
+        .prepare(
+          `select "id", "sharedWith", "sharedDomains", "isPublic"
+           from "artifacts" where "slug" = ?`
+        )
         .bind(requestedSlug)
         .first<{
           id: string;

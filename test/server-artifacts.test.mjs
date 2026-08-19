@@ -64,11 +64,33 @@ function createDatabase() {
         return null;
       }
 
-      if (this.sql === 'select * from "artifacts" where "id" = ?') {
-        return state.artifacts.find((artifact) => artifact.id === this.values[0]) ?? null;
+      if (
+        this.sql.includes('from "artifacts" where "id" = ?') &&
+        !this.sql.includes('select "html"')
+      ) {
+        const artifact = state.artifacts.find(
+          (candidate) => candidate.id === this.values[0]
+        );
+        if (!artifact) return null;
+        const { html: _html, ...metadata } = artifact;
+        return metadata;
       }
-      if (this.sql === 'select * from "artifacts" where "slug" = ?') {
-        return state.artifacts.find((artifact) => artifact.slug === this.values[0]) ?? null;
+      if (
+        this.sql.includes('from "artifacts" where "slug" = ?') &&
+        !this.sql.includes('select "html"')
+      ) {
+        const artifact = state.artifacts.find(
+          (candidate) => candidate.slug === this.values[0]
+        );
+        if (!artifact) return null;
+        const { html: _html, ...metadata } = artifact;
+        return metadata;
+      }
+      if (this.sql === 'select "html" from "artifacts" where "id" = ?') {
+        const artifact = state.artifacts.find(
+          (candidate) => candidate.id === this.values[0]
+        );
+        return artifact ? { html: artifact.html } : null;
       }
       if (
         this.sql ===
@@ -292,6 +314,37 @@ test("workspace viewer bindings grant read-only access to private artifacts", as
   const viewed = await artifactBySlug(env, viewer, "private-report");
   assert.equal(viewed?.slug, "private-report");
   assert.equal(viewed?.canManage, false);
+});
+
+test("loads artifact HTML only after authorization succeeds", async () => {
+  const { db, state } = createDatabase();
+  const env = environment(db);
+  state.artifacts.push(artifact({ sharedWith: "[]", sharedDomains: "[]" }));
+
+  assert.equal(
+    await artifactBySlug(
+      env,
+      { userId: "stranger-id", email: "stranger@example.net" },
+      "private-report"
+    ),
+    null
+  );
+  assert.equal(
+    state.queries.some((sql) => sql.includes('select "html"')),
+    false
+  );
+
+  state.queries.length = 0;
+  const owner = { userId: "owner-id", email: "owner@example.com" };
+  await claimOwnerAccess(env, owner);
+  assert.equal(
+    (await artifactBySlug(env, owner, "private-report"))?.html,
+    "<h1>Private</h1>"
+  );
+  assert.equal(
+    state.queries.filter((sql) => sql.includes('select "html"')).length,
+    1
+  );
 });
 
 test("owner listings select unexpired metadata without artifact HTML", async () => {

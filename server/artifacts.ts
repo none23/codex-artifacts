@@ -308,21 +308,44 @@ async function requireArtifactCapacity(
 async function artifactById(
   db: D1Database,
   artifactId: string
-): Promise<ArtifactRow | null> {
+): Promise<ArtifactMetadataRow | null> {
   return db
-    .prepare('select * from "artifacts" where "id" = ?')
+    .prepare(
+      `select
+        "id", "slug", "title", "ownerId", "ownerEmail", "sharedWith",
+        "sharedDomains", "isPublic", "expiresAt", "sizeBytes", "createdAt",
+        "updatedAt"
+       from "artifacts" where "id" = ?`
+    )
     .bind(artifactId)
-    .first<ArtifactRow>();
+    .first<ArtifactMetadataRow>();
 }
 
 async function artifactBySlugRow(
   db: D1Database,
   slug: string
-): Promise<ArtifactRow | null> {
+): Promise<ArtifactMetadataRow | null> {
   return db
-    .prepare('select * from "artifacts" where "slug" = ?')
+    .prepare(
+      `select
+        "id", "slug", "title", "ownerId", "ownerEmail", "sharedWith",
+        "sharedDomains", "isPublic", "expiresAt", "sizeBytes", "createdAt",
+        "updatedAt"
+       from "artifacts" where "slug" = ?`
+    )
     .bind(slug)
-    .first<ArtifactRow>();
+    .first<ArtifactMetadataRow>();
+}
+
+async function artifactHtmlById(
+  db: D1Database,
+  artifactId: string
+): Promise<string | null> {
+  const artifact = await db
+    .prepare('select "html" from "artifacts" where "id" = ?')
+    .bind(artifactId)
+    .first<Pick<ArtifactRow, "html">>();
+  return artifact?.html ?? null;
 }
 
 export async function viewer(
@@ -394,12 +417,14 @@ export async function artifactBySlug(
       )
     : false;
   if (!isPublic && !canManage && !hasWorkspaceAccess && !hasGrant) return null;
+  const html = await artifactHtmlById(env.DB, artifact.id);
+  if (html === null) return null;
 
   return {
     id: artifact.id,
     slug: artifact.slug,
     title: artifact.title,
-    html: artifact.html,
+    html,
     sizeBytes: artifact.sizeBytes,
     updatedAt: artifact.updatedAt,
     expiresAt: artifact.expiresAt || null,
