@@ -297,7 +297,7 @@ async function requireArtifactCapacity(
   }
 }
 
-async function artifactById(
+async function artifactMetadataById(
   db: D1Database,
   artifactId: string
 ): Promise<ArtifactMetadataRow | null> {
@@ -313,7 +313,7 @@ async function artifactById(
     .first<ArtifactMetadataRow>();
 }
 
-async function artifactBySlugRow(
+async function artifactMetadataBySlug(
   db: D1Database,
   slug: string
 ): Promise<ArtifactMetadataRow | null> {
@@ -346,9 +346,13 @@ export async function viewer(
 ): Promise<Viewer> {
   const configuredOwners = ownerEmails(env);
   const configuredViewers = workspaceViewerEmails(env, configuredOwners);
+  const [isOwner, isWorkspaceViewer] = await Promise.all([
+    hasOwnerAccess(env, identity),
+    hasWorkspaceViewerAccess(env, identity)
+  ]);
   return {
-    isOwner: await hasOwnerAccess(env, identity),
-    isWorkspaceViewer: await hasWorkspaceViewerAccess(env, identity),
+    isOwner,
+    isWorkspaceViewer,
     canClaimOwner: Boolean(identity && configuredOwners.includes(identity.email)),
     canClaimWorkspaceViewer: Boolean(
       identity && configuredViewers.includes(identity.email)
@@ -389,7 +393,7 @@ export async function artifactBySlug(
   identity: Identity | null,
   slugInput: string
 ): Promise<ViewedArtifact | null> {
-  const artifact = await artifactBySlugRow(env.DB, cleanSlug(slugInput));
+  const artifact = await artifactMetadataBySlug(env.DB, cleanSlug(slugInput));
   if (!artifact || isArtifactExpired(artifact.expiresAt ?? "")) return null;
 
   const sharedWith = parseSharedEmails(artifact.sharedWith);
@@ -397,17 +401,19 @@ export async function artifactBySlug(
   const isPublic = artifact.isPublic === 1;
   const configuredOwners = ownerEmails(env);
   const configuredViewers = workspaceViewerEmails(env, configuredOwners);
-  const canManage = await hasOwnerAccess(env, identity);
-  const hasWorkspaceAccess = await hasWorkspaceViewerAccess(env, identity);
-  const hasGrant = identity
-    ? await validArtifactGrant(
-        env.DB,
-        artifact.id,
-        identity.userId,
-        sharedWith,
-        sharedDomains
-      )
-    : false;
+  const [canManage, hasWorkspaceAccess, hasGrant] = await Promise.all([
+    hasOwnerAccess(env, identity),
+    hasWorkspaceViewerAccess(env, identity),
+    identity
+      ? validArtifactGrant(
+          env.DB,
+          artifact.id,
+          identity.userId,
+          sharedWith,
+          sharedDomains
+        )
+      : false
+  ]);
   if (!isPublic && !canManage && !hasWorkspaceAccess && !hasGrant) return null;
   const html = await artifactHtmlById(env.DB, artifact.id);
   if (html === null) return null;
@@ -434,7 +440,7 @@ export async function acceptArtifactAccess(
   identity: Identity | null,
   slugInput: string
 ): Promise<ArtifactAccessResult> {
-  const artifact = await artifactBySlugRow(env.DB, cleanSlug(slugInput));
+  const artifact = await artifactMetadataBySlug(env.DB, cleanSlug(slugInput));
   if (!artifact || !identity) return { status: "unavailable" };
 
   const sharedWith = parseSharedEmails(artifact.sharedWith);
@@ -495,7 +501,7 @@ export async function publishArtifact(
   const configuredViewers = workspaceViewerEmails(env, configuredOwners);
   const implicitAccessEmails = [...configuredOwners, ...configuredViewers];
   const artifact = input.artifactId
-    ? await artifactById(env.DB, input.artifactId)
+    ? await artifactMetadataById(env.DB, input.artifactId)
     : null;
   if (input.artifactId && !artifact) {
     throw new AppError("Artifact not found.", 404);
@@ -515,7 +521,7 @@ export async function publishArtifact(
     },
     implicitAccessEmails
   );
-  const slugMatch = await artifactBySlugRow(env.DB, validated.slug);
+  const slugMatch = await artifactMetadataBySlug(env.DB, validated.slug);
   if (slugMatch && slugMatch.id !== artifact?.id) {
     throw new AppError("That slug is already in use.", 409);
   }
@@ -606,7 +612,7 @@ export async function setArtifactExpiration(
   expiresInSeconds: number | null
 ): Promise<{ expiresAt: string | null }> {
   await requireOwner(env, identity);
-  const artifact = await artifactById(env.DB, artifactId);
+  const artifact = await artifactMetadataById(env.DB, artifactId);
   if (!artifact || isArtifactExpired(artifact.expiresAt ?? "")) {
     throw new AppError("Artifact not found.", 404);
   }
@@ -625,7 +631,7 @@ export async function setArtifactAccess(
   access: ArtifactAccess
 ): Promise<ArtifactAccess> {
   await requireOwner(env, identity);
-  const artifact = await artifactById(env.DB, artifactId);
+  const artifact = await artifactMetadataById(env.DB, artifactId);
   if (!artifact) throw new AppError("Artifact not found.", 404);
   if (!Array.isArray(access.emails) || access.emails.length > MAX_SHARED_EMAILS) {
     throw new AppError(`At most ${MAX_SHARED_EMAILS} people can be added.`);
