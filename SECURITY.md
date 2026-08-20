@@ -16,7 +16,3 @@ Include:
 - Any suggested mitigation
 
 Do not test against a deployment you do not own or have explicit permission to assess.
-
-## Deployment secrets
-
-Publishing tokens, Cloudflare tokens, Google OAuth secrets, `.dev.vars`, `.env.cloudflare.*`, `wrangler.jsonc`, database exports, workspace-viewer invitations, and private artifact URLs must not be committed or included in reports. Rotate a secret immediately if it is exposed.
