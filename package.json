@@ -30,7 +30,7 @@
     "react-router-dom": "7.18.2"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.53.0",
+    "@cloudflare/vite-plugin": "1.54.7",
     "@cloudflare/workers-types": "5.20260818.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.2.0",
@@ -40,6 +40,6 @@
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.2.1",
-    "wrangler": "4.124.0"
+    "wrangler": "4.131.0"
   }
 }
