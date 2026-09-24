@@ -478,7 +478,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
       setDomains(saved.domains);
       setIsPublic(saved.isPublic);
       setKnownEmails(rememberEmails(saved.emails));
-      setStatus("Access updated.");
+      setOpen(false);
     } catch (caught) {
       setStatus(messageFromError(caught));
     } finally {
@@ -510,7 +510,7 @@ function AccessControl({ artifact }: { artifact: ViewedArtifact }) {
         <span className="hidden sm:inline">{accessDescription}</span>
       </button>
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+0.6rem)] z-30 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-white/15 bg-slate-950 p-5 text-left shadow-2xl shadow-black/50" role="dialog" aria-label="Artifact access settings">
+        <div className="absolute right-0 top-[calc(100%+0.6rem)] z-30 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-white/15 bg-[#0b0b0b] p-5 text-left shadow-2xl shadow-black/50" role="dialog" aria-label="Artifact access settings">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-semibold text-white">Access settings</h2>
